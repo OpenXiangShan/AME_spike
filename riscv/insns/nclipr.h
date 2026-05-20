@@ -8,4 +8,4 @@ if (shamt == 0) {
 } else {
     result = P_SAT(32, (val >> shamt) + ((val >> (shamt - 1)) & 1));
 }
-WRITE_RD(result);
+WRITE_RD(sext32(result));
