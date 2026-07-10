@@ -2,4 +2,4 @@ require_extension('P');
 require_rv32;
 sreg_t tmp = (sreg_t)P_RS1_PAIR >> insn.shamtd();
 int32_t result = P_SAT(32, tmp);
-WRITE_RD(result);
+WRITE_RD(sext32(result));
