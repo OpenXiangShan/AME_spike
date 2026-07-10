@@ -1,7 +1,7 @@
 // vqdot.vx vd, vs2, rs1, vm
-#include "vqdot_common.h"
+#include "vdot4a_common.h"
 
-require_extension(EXT_ZVQDOTQ);
+require_extension(EXT_ZVDOT4A);
 require(P.VU.vsew == e32);
 
 VI_VX_LOOP
