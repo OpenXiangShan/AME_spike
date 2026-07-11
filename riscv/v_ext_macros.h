@@ -2245,16 +2245,18 @@ c_t generic_dot_product(const std::vector<a_t>& a, const std::vector<b_t>& b, c_
 }
 
 #define ZVLDOT_LOOP(a_t, b_t, c_t, dot) \
-  std::vector<a_t> a(P.VU.vlmax, a_t()); \
-  std::vector<b_t> b(P.VU.vlmax, b_t()); \
-  for (reg_t i = 0, vl = P.VU.vl->read(); i < vl; i++) { \
-    VI_LOOP_ELEMENT_SKIP(); \
-    a[i] = P.VU.elt<a_t>(insn.rs1(), i); \
-    b[i] = P.VU.elt<b_t>(insn.rs2(), i); \
-  } \
-  auto& acc = P.VU.elt<c_t>(insn.rd(), 0, true); \
-  acc = dot(a, b, acc); \
-  set_fp_exceptions;
+  if (auto vl = P.VU.vl->read()) { \
+    std::vector<a_t> a(P.VU.vlmax, a_t()); \
+    std::vector<b_t> b(P.VU.vlmax, b_t()); \
+    for (reg_t i = 0; i < vl; i++) { \
+      VI_LOOP_ELEMENT_SKIP(); \
+      a[i] = P.VU.elt<a_t>(insn.rs1(), i); \
+      b[i] = P.VU.elt<b_t>(insn.rs2(), i); \
+    } \
+    auto& acc = P.VU.elt<c_t>(insn.rd(), 0, true); \
+    acc = dot(a, b, acc); \
+    set_fp_exceptions; \
+  }
 
 #define ZVLDOT_GENERIC_LOOP(a_t, b_t, c_t, macc) \
   auto dot = std::bind(generic_dot_product<a_t, b_t, c_t>, std::placeholders::_1, std::placeholders::_2, std::placeholders::_3, macc); \
@@ -2265,18 +2267,20 @@ c_t generic_dot_product(const std::vector<a_t>& a, const std::vector<b_t>& b, c_
   ZVLDOT_GENERIC_LOOP(a_t, b_t, c_t, macc)
 
 #define ZVBDOT_LOOP(a_t, b_t, c_t, dot) \
-  for (reg_t idx = 0; idx < 8; idx++) { \
-    reg_t i = ci + idx; \
-    VI_LOOP_ELEMENT_SKIP(); \
-    std::vector<a_t> a(P.VU.vlmax, a_t()); \
-    std::vector<b_t> b(P.VU.vlmax, b_t()); \
-    for (reg_t k = 0, vl = P.VU.vl->read(); k < vl; k++) { \
-      a[k] = P.VU.elt<a_t>(insn.rs1(), k); \
-      b[k] = P.VU.elt<b_t>(vs2 + idx, k); \
+  if (auto vl = P.VU.vl->read()) { \
+    for (reg_t idx = 0; idx < 8; idx++) { \
+      reg_t i = ci + idx; \
+      VI_LOOP_ELEMENT_SKIP(); \
+      std::vector<a_t> a(P.VU.vlmax, a_t()); \
+      std::vector<b_t> b(P.VU.vlmax, b_t()); \
+      for (reg_t k = 0; k < vl; k++) { \
+        a[k] = P.VU.elt<a_t>(insn.rs1(), k); \
+        b[k] = P.VU.elt<b_t>(vs2 + idx, k); \
+      } \
+      auto& acc = P.VU.elt<c_t>(insn.rd(), i, true); \
+      acc = dot(a, b, acc); \
+      set_fp_exceptions; \
     } \
-    auto& acc = P.VU.elt<c_t>(insn.rd(), i, true); \
-    acc = dot(a, b, acc); \
-    set_fp_exceptions; \
   }
 
 #define ZVBDOT_GENERIC_LOOP(a_t, b_t, c_t, macc) \
