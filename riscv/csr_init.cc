@@ -586,8 +586,6 @@ void state_t::csr_init(processor_t* const proc, reg_t max_isa)
     const reg_t spmp_cfg_mask = (SPMP_SHARED | SPMP_U | PMP_L | PMP_A | PMP_X | PMP_W | PMP_R);
     for (size_t i = 0; i < max_pmp; ++i) {
       csr_t_p cfg = std::make_shared<spmpcfg_csr_t>(proc, i, spmp_cfg_mask, 0);
-      dynamic_cast<sscsrind_reg_csr_t*>(csrmap[CSR_MIREG2].get())->add_ireg_proxy(i, cfg);
-      dynamic_cast<sscsrind_reg_csr_t*>(csrmap[CSR_SIREG2].get())->add_ireg_proxy(i, cfg);
       mireg[1]->add_ireg_proxy(0x100+i, cfg);
       nonvirtual_sireg[1]->add_ireg_proxy(0x100+i, cfg);
     }
