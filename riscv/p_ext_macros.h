@@ -767,11 +767,10 @@
 })
 
 #define P_USAT_FULL(BIT, R) ({ \
-  sreg_t _pusatf_in = (R); \
-  sreg_t _pusatf_out; \
-  if (_pusatf_in < 0) _pusatf_out = 0; \
-  else if ((BIT) >= 64) _pusatf_out = _pusatf_in; \
-  else if (_pusatf_in > (sreg_t)((reg_t(1) << (BIT)) - 1)) _pusatf_out = (sreg_t)((reg_t(1) << (BIT)) - 1); \
+  reg_t _pusatf_in = (R); \
+  reg_t _pusatf_out; \
+  if ((BIT) == 64) _pusatf_out = _pusatf_in; \
+  else if (_pusatf_in > (reg_t(1) << (BIT)) - 1) _pusatf_out = (reg_t(1) << (BIT)) - 1; \
   else _pusatf_out = _pusatf_in; \
   if (_pusatf_out != _pusatf_in) P.set_vxsat(); \
   _pusatf_out; \

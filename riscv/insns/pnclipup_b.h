@@ -5,7 +5,7 @@ reg_t s_low = RS1;
 reg_t s_high = RS2;
 for (int i = 0; i < 8; i++) {
   reg_t s_h = (i < 4) ? P_UFIELD(s_low, i, 16) : P_UFIELD(s_high, i - 4, 16);
-  reg_t sat_val = P_USAT_FULL(8, (sreg_t)s_h);
+  reg_t sat_val = P_USAT_FULL(8, s_h);
   if (sat_val != s_h) P.set_vxsat();
   rd_tmp = set_field(rd_tmp, make_mask64(i * 8, 8), (uint8_t)sat_val);
 }
