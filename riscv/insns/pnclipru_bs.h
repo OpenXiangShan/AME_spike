@@ -9,5 +9,5 @@ P_NARROW_RD_RS1_ULOOP(8, 16, {
         uint32_t roundbit = (p_rs1 >> (shamt - 1)) & 1;
         result = shifted + roundbit;
     }
-    p_rd = P_USAT_FULL(8, (sreg_t)result);
+    p_rd = P_USAT_FULL(8, result);
 })
