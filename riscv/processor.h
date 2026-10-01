@@ -1,3 +1,5 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
 // See LICENSE for license details.
 #ifndef _RISCV_PROCESSOR_H
 #define _RISCV_PROCESSOR_H
@@ -17,6 +19,7 @@
 #include "triggers.h"
 #include "../fesvr/memif.h"
 #include "vector_unit.h"
+#include "ztt_state.h"
 
 #define FIRST_HPMCOUNTER 3
 #define N_HPMCOUNTERS 29
@@ -424,6 +427,7 @@ public:
   reg_t pmp_tor_mask() { return -(reg_t(1) << (lg_pmp_granularity - PMP_SHIFT)); }
 
   vectorUnit_t VU;
+  ztt_unit_t ZTU;
   triggers::module_t TM;
 };
 

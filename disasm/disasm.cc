@@ -1,3 +1,5 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
 // See LICENSE for license details.
 
 #include "disasm.h"
@@ -62,6 +64,61 @@ struct : public arg_t {
     return xpr_name[insn.rs1()];
   }
 } xrs1;
+
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    return "m" + std::to_string(insn.rd());
+  }
+} ztt_md;
+
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    return "m" + std::to_string(insn.rs1());
+  }
+} ztt_ms1;
+
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    return "m" + std::to_string(insn.rs2());
+  }
+} ztt_ms2;
+
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    return "acc" + std::to_string(insn.rd());
+  }
+} ztt_accd;
+
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    return "acc" + std::to_string(insn.rs1());
+  }
+} ztt_accs1;
+
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    return "acc" + std::to_string((insn.bits() >> 8) & 3);
+  }
+} ztt_acc98;
+
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    return "acc" + std::to_string((insn.bits() >> 15) & 3);
+  }
+} ztt_acc1516;
+
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    return "acc" + std::to_string((insn.bits() >> 20) & 3);
+  }
+} ztt_acc2021;
+
+struct : public arg_t {
+  std::string to_string(insn_t insn) const {
+    int value = (insn.bits() >> 20) & 0x7f;
+    return std::to_string((value & 0x40) ? value - 0x80 : value);
+  }
+} ztt_shift_imm;
 
 struct : public arg_t {
   std::string to_string(insn_t insn) const {
@@ -978,6 +1035,147 @@ void disassembler_t::add_instructions(const isa_parser_t* isa, bool strict)
   #define DEFINE_XAMO(code) add_xamo_insn(this, #code, match_##code, mask_##code);
   #define DEFINE_XLOAD_BASE(code) add_xlr_insn(this, #code, match_##code, mask_##code);
   #define DEFINE_XSTORE_BASE(code) add_xst_insn(this, #code, match_##code, mask_##code);
+
+  if (ext_enabled(EXT_ZTT)) {
+    DISASM_INSN("ame.acquire", ztt_ame_acquire, 0, {&xrd, &xrs1})
+    DISASM_INSN("ame.release", ztt_ame_release, 0, {})
+    DISASM_INSN("agettyp", ztt_agettyp, 0, {&xrd, &ztt_accs1})
+    DISASM_INSN("asettyp", ztt_asettyp, 0, {&ztt_accd, &xrs1})
+    DISASM_INSN("mabs.ew", ztt_mabs_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mabsdiff.ew", ztt_mabsdiff_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mabsdiff.ew.x", ztt_mabsdiff_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("madd.ew", ztt_madd_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("madd.ew.x", ztt_madd_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mand.ew", ztt_mand_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mand.ew.x", ztt_mand_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mandnot.ew", ztt_mandnot_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mandnot.ew.x", ztt_mandnot_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mcmovge.ew", ztt_mcmovge_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mcmovlt.ew", ztt_mcmovlt_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mcmpge.ew", ztt_mcmpge_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mcmpge.ew.x", ztt_mcmpge_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mcmplt.ew", ztt_mcmplt_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mcmplt.ew.x", ztt_mcmplt_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mcolbcast.ew.x", ztt_mcolbcast_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mcolgather.ew", ztt_mcolgather_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mcolid.ew", ztt_mcolid_ew, 0, {&ztt_md})
+    DISASM_INSN("mcolshift.ew.x", ztt_mcolshift_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mcolunzip.ew", ztt_mcolunzip_ew, 0, {&ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mcolzip.ew", ztt_mcolzip_ew, 0, {&ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mconv.ew", ztt_mconv_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mbcast.m.x", ztt_mbcast_m_x, 0, {&ztt_md, &xrs1, &xrs2})
+    DISASM_INSN("mcos.ew", ztt_mcos_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mexp2.ew", ztt_mexp2_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mfrintm.ew", ztt_mfrintm_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mfrintn.ew", ztt_mfrintn_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mfrintp.ew", ztt_mfrintp_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mfrintz.ew", ztt_mfrintz_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mgettyp", ztt_mgettyp, 0, {&xrd, &ztt_ms1})
+    DISASM_INSN("mhdiff.ew", ztt_mhdiff_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mhdiff.ew.x", ztt_mhdiff_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mldexp.ew", ztt_mldexp_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mldexp.ew.x", ztt_mldexp_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mldexpacc.ew", ztt_mldexpacc_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mldexpacc.ew.x", ztt_mldexpacc_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mlog2.ew", ztt_mlog2_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mlog2sub.ew", ztt_mlog2sub_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mlog2sub.ew.x", ztt_mlog2sub_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mls.1r", ztt_mls_1r, 0, {&ztt_md, &xrs1})
+    DISASM_INSN("mls.cm", ztt_mls_cm, 0, {&ztt_md, &xrs1})
+    DISASM_INSN("mls.rm", ztt_mls_rm, 0, {&ztt_md, &xrs1})
+    DISASM_INSN("mls.st", ztt_mls_st, 0, {&ztt_md, &base_only_address, &xrs2})
+    DISASM_INSN("mls.tst", ztt_mls_tst, 0, {&ztt_md, &base_only_address, &xrs2})
+    DISASM_INSN("mmax.ew", ztt_mmax_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmax.ew.x", ztt_mmax_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mmean.ew", ztt_mmean_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmean.ew.x", ztt_mmean_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mmin.ew", ztt_mmin_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmin.ew.x", ztt_mmin_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mmov.m.a", ztt_mmov_m_a, 0, {&ztt_md, &ztt_accs1})
+    DISASM_INSN("mmov.a.m", ztt_mmov_a_m, 0, {&ztt_accd, &ztt_ms1})
+    DISASM_INSN("mmov.m.m", ztt_mmov_m_m, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mmove8.m.x", ztt_mmove8_m_x, 0, {&ztt_md, &xrs1, &xrs2})
+    DISASM_INSN("mmove16.m.x", ztt_mmove16_m_x, 0, {&ztt_md, &xrs1, &xrs2})
+    DISASM_INSN("mmove32.m.x", ztt_mmove32_m_x, 0, {&ztt_md, &xrs1, &xrs2})
+    DISASM_INSN("mmove64.m.x", ztt_mmove64_m_x, 0, {&ztt_md, &xrs1, &xrs2})
+    DISASM_INSN("mmove8.x.m", ztt_mmove8_x_m, 0, {&xrd, &ztt_ms1, &xrs2})
+    DISASM_INSN("mmove16.x.m", ztt_mmove16_x_m, 0, {&xrd, &ztt_ms1, &xrs2})
+    DISASM_INSN("mmove32.x.m", ztt_mmove32_x_m, 0, {&xrd, &ztt_ms1, &xrs2})
+    DISASM_INSN("mmove64.x.m", ztt_mmove64_x_m, 0, {&xrd, &ztt_ms1, &xrs2})
+    DISASM_INSN("mmul.ew", ztt_mmul_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmul.ew.x", ztt_mmul_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mmulacc.2d", ztt_mmulacc_2d, 0, {&ztt_accd, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulacc.ew", ztt_mmulacc_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulacc.ew.x", ztt_mmulacc_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mmulaccneg.2d", ztt_mmulaccneg_2d, 0, {&ztt_accd, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulaccneg.ew", ztt_mmulaccneg_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulaccneg.ew.x", ztt_mmulaccneg_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mmuladd.ew", ztt_mmuladd_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmuladd.ew.x", ztt_mmuladd_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mmulatacc.2d", ztt_mmulatacc_2d, 0, {&ztt_accd, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulataccneg.2d", ztt_mmulataccneg_2d, 0, {&ztt_accd, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulbtacc.2d", ztt_mmulbtacc_2d, 0, {&ztt_accd, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulbtaccneg.2d", ztt_mmulbtaccneg_2d, 0, {&ztt_accd, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulneg.ew", ztt_mmulneg_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulneg.ew.x", ztt_mmulneg_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mmulsub.ew", ztt_mmulsub_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mmulsub.ew.x", ztt_mmulsub_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mor.ew", ztt_mor_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mor.ew.x", ztt_mor_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mornot.ew", ztt_mornot_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mornot.ew.x", ztt_mornot_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mpack.ew.x", ztt_mpack_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mprefixadd.col", ztt_mprefixadd_col, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mprefixadd.row", ztt_mprefixadd_row, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mprefixmax.col", ztt_mprefixmax_col, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mprefixmax.row", ztt_mprefixmax_row, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mrdexp.ew", ztt_mrdexp_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mrdexpacc.ew", ztt_mrdexpacc_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mrec.ew", ztt_mrec_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mreduceadd.col", ztt_mreduceadd_col, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mreduceadd.row", ztt_mreduceadd_row, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mreducemax.col", ztt_mreducemax_col, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mreducemax.row", ztt_mreducemax_row, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mreducemin.col", ztt_mreducemin_col, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mreducemin.row", ztt_mreducemin_row, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mrowbcast.ew.x", ztt_mrowbcast_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mrowgather.ew", ztt_mrowgather_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mrowid.ew", ztt_mrowid_ew, 0, {&ztt_md})
+    DISASM_INSN("mrowshift.ew.x", ztt_mrowshift_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mrowunzip.ew", ztt_mrowunzip_ew, 0, {&ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mrowzip.ew", ztt_mrowzip_ew, 0, {&ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mrsqrt.ew", ztt_mrsqrt_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("mrowscatadd.ew", ztt_mrowscatadd_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mcolscatadd.ew", ztt_mcolscatadd_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mrowscatmax.ew", ztt_mrowscatmax_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mcolscatmax.ew", ztt_mcolscatmax_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mselge.ew", ztt_mselge_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("msellt.ew", ztt_msellt_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("msettyp", ztt_msettyp, 0, {&ztt_md, &xrs1})
+    DISASM_INSN("msin.ew", ztt_msin_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("msll.ew", ztt_msll_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("msll.ew.x", ztt_msll_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("msqrt.ew", ztt_msqrt_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("msra.ew", ztt_msra_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("msra.ew.x", ztt_msra_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("msrl.ew", ztt_msrl_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("msrl.ew.x", ztt_msrl_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mss.1r", ztt_mss_1r, 0, {&ztt_md, &xrs1})
+    DISASM_INSN("mss.cm", ztt_mss_cm, 0, {&ztt_md, &xrs1})
+    DISASM_INSN("mss.rm", ztt_mss_rm, 0, {&ztt_md, &xrs1})
+    DISASM_INSN("mss.st", ztt_mss_st, 0, {&ztt_md, &base_only_address, &xrs2})
+    DISASM_INSN("mss.tst", ztt_mss_tst, 0, {&ztt_md, &base_only_address, &xrs2})
+    DISASM_INSN("msub.ew", ztt_msub_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("msub.ew.x", ztt_msub_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("msublog2.ew", ztt_msublog2_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("msublog2.ew.x", ztt_msublog2_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mtanh.ew", ztt_mtanh_ew, 0, {&ztt_md, &ztt_ms1})
+    DISASM_INSN("munpack.ew.x", ztt_munpack_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mxor.ew", ztt_mxor_ew, 0, {&ztt_md, &ztt_ms1, &ztt_ms2})
+    DISASM_INSN("mxor.ew.x", ztt_mxor_ew_x, 0, {&ztt_md, &xrs1, &ztt_ms2})
+    DISASM_INSN("mzero.2d.acc", ztt_mzero_2d_acc, 0, {&ztt_accd})
+    DISASM_INSN("mzero.2d.m", ztt_mzero_2d_m, 0, {&ztt_md})
+  }
   #define DEFINE_FLOAD(code) add_fload_insn(this, #code, match_##code, mask_##code);
   #define DEFINE_FSTORE(code) add_fstore_insn(this, #code, match_##code, mask_##code);
   #define DEFINE_FRTYPE(code) add_frtype_insn(this, #code, match_##code, mask_##code);

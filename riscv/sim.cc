@@ -1,3 +1,5 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
 // See LICENSE for license details.
 
 #include "config.h"
@@ -393,6 +395,13 @@ bool sim_t::mmio_store(reg_t paddr, size_t len, const uint8_t* bytes)
   if (paddr + len < paddr)
     return false;
   return bus.store(paddr, len, bytes);
+}
+
+bool sim_t::mmio_store_preflight(reg_t paddr, size_t len)
+{
+  if (paddr + len < paddr)
+    return false;
+  return bus.store_preflight(paddr, len);
 }
 
 void sim_t::set_rom()

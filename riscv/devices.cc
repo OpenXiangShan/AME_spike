@@ -1,3 +1,6 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
+// See LICENSE for license details.
 #include "devices.h"
 #include "mmu.h"
 #include <stdexcept>
@@ -57,6 +60,13 @@ bool bus_t::store(reg_t addr, size_t len, const uint8_t* bytes)
 {
   if (auto [base, dev] = find_device(addr, len); dev)
     return dev->store(addr - base, len, bytes);
+  return false;
+}
+
+bool bus_t::store_preflight(reg_t addr, size_t len)
+{
+  if (auto [base, dev] = find_device(addr, len); dev)
+    return dev->store_preflight(addr - base, len);
   return false;
 }
 

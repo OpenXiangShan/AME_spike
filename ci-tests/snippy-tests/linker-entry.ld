@@ -1,1 +1,0 @@
-ENTRY(_entry)

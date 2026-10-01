@@ -1,0 +1,8 @@
+[submodule "core-math"]
+	path = core-math
+	url = https://gitlab.inria.fr/core-math/core-math.git
+	branch = master
+[submodule "toolchain/AME_llvm"]
+	path = toolchain/AME_llvm
+	url = https://github.com/OpenXiangShan/AME_llvm.git
+	branch = ztt-v0.6-dev

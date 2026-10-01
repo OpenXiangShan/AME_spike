@@ -1,3 +1,5 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
 // See LICENSE for license details.
 
 #ifndef _RISCV_SIM_H
@@ -116,6 +118,7 @@ private:
   // memory-mapped I/O routines
   virtual bool mmio_load(reg_t paddr, size_t len, uint8_t* bytes) override;
   virtual bool mmio_store(reg_t paddr, size_t len, const uint8_t* bytes) override;
+  virtual bool mmio_store_preflight(reg_t paddr, size_t len) override;
   void set_rom();
 
   virtual const char* get_symbol(uint64_t paddr) override;

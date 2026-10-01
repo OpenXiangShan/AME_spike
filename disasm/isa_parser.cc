@@ -1,3 +1,6 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
+// See LICENSE for license details.
 #include "isa_parser.h"
 #include <cstring>
 #include <initializer_list>
@@ -149,6 +152,8 @@ static const extension_info_t extension_infos[] = {
   {"zksh", {EXT_ZKSH}},
   {"zkr", {EXT_ZKR}},
   {"zkt"},
+  // Ztt uses development encodings until architectural encodings are allocated.
+  {"ztt", {EXT_ZTT}},
   {"smepmp", {EXT_SMEPMP}},
   {"smpmpdeleg", {EXT_SMPMPDELEG}},
   {"sspmp", {EXT_SSPMP, EXT_SMCSRIND, EXT_SSCSRIND}, {"smpmpdeleg"}},

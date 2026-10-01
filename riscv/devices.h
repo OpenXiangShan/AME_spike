@@ -1,3 +1,6 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
+// See LICENSE for license details.
 #ifndef _RISCV_DEVICES_H
 #define _RISCV_DEVICES_H
 
@@ -23,6 +26,7 @@ class bus_t : public abstract_device_t {
 
   bool load(reg_t addr, size_t len, uint8_t* bytes) override;
   bool store(reg_t addr, size_t len, const uint8_t* bytes) override;
+  bool store_preflight(reg_t addr, size_t len) override;
   reg_t size() override;
   void add_device(reg_t addr, abstract_device_t* dev);
 
@@ -96,6 +100,8 @@ class clint_t : public abstract_device_t {
   clint_t(const simif_t*, uint64_t freq_hz, bool real_time);
   bool load(reg_t addr, size_t len, uint8_t* bytes) override;
   bool store(reg_t addr, size_t len, const uint8_t* bytes) override;
+  bool store_preflight(reg_t addr, size_t len) override
+    { return len <= 8 && addr + len >= addr && addr + len <= CLINT_SIZE; }
   reg_t size() override { return CLINT_SIZE; }
   void tick(reg_t rtc_ticks) override;
   uint64_t get_mtimecmp(reg_t hartid) { return mtimecmp[hartid]; }
@@ -166,6 +172,8 @@ class ns16550_t : public abstract_device_t {
             uint32_t interrupt_id, uint32_t reg_shift, uint32_t reg_io_width);
   bool load(reg_t addr, size_t len, uint8_t* bytes) override;
   bool store(reg_t addr, size_t len, const uint8_t* bytes) override;
+  bool store_preflight(reg_t addr, size_t len) override
+    { return len == reg_io_width && addr + len >= addr && addr + len <= NS16550_SIZE; }
   void tick(reg_t rtc_ticks) override;
   reg_t size() override { return NS16550_SIZE; }
  private:

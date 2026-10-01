@@ -1,3 +1,6 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
+// See LICENSE for license details.
 #ifndef _RISCV_ABSTRACT_DEVICE_H
 #define _RISCV_ABSTRACT_DEVICE_H
 
@@ -16,6 +19,12 @@ class abstract_device_t {
  public:
   virtual bool load(reg_t addr, size_t len, uint8_t* bytes) = 0;
   virtual bool store(reg_t addr, size_t len, const uint8_t* bytes) = 0;
+  // A successful preflight promises that a subsequent store of the same
+  // address and width will be accepted without performing device side
+  // effects.  Devices that cannot make that promise remain unsupported for
+  // fault-atomic multi-access stores such as AME stores.
+  virtual bool store_preflight(reg_t UNUSED addr, size_t UNUSED len)
+    { return false; }
   virtual reg_t size() = 0;
   virtual ~abstract_device_t() {}
   virtual void tick(reg_t UNUSED rtc_ticks) {}

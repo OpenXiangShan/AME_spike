@@ -1,5 +1,10 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
+// See LICENSE for license details.
 #include "processor.h"
 #include "debug_defines.h"
+#include "ztt_config.h"
+#include "ztt_csr.h"
 
 void state_t::add_csr(reg_t addr, const csr_t_p& csr)
 {
@@ -35,6 +40,37 @@ void state_t::csr_init(processor_t* const proc, reg_t max_isa)
   // This assumes xlen is always max_xlen, which is true today (see
   // mstatus_csr_t::unlogged_write()):
   auto xlen = proc->get_isa().get_max_xlen();
+
+  if (proc->extension_enabled_const(EXT_ZTT)) {
+    add_csr(ztt::kCsrAmenlen,
+            std::make_shared<ztt_csr_t>(proc, &proc->ZTU,
+                                        ztt::kCsrAmenlen,
+                                        ztt_csr_kind_t::amenlen));
+    add_csr(ztt::kCsrAmeudsz,
+            std::make_shared<ztt_csr_t>(proc, &proc->ZTU,
+                                        ztt::kCsrAmeudsz,
+                                        ztt_csr_kind_t::ameudsz));
+    add_csr(ztt::kCsrAmestype,
+            std::make_shared<ztt_csr_t>(proc, &proc->ZTU,
+                                        ztt::kCsrAmestype,
+                                        ztt_csr_kind_t::amestype));
+    add_csr(ztt::kCsrAmeown,
+            std::make_shared<ztt_csr_t>(proc, &proc->ZTU,
+                                        ztt::kCsrAmeown,
+                                        ztt_csr_kind_t::ameown));
+    add_csr(ztt::kCsrAmefflags,
+            std::make_shared<ztt_csr_t>(proc, &proc->ZTU,
+                                        ztt::kCsrAmefflags,
+                                        ztt_csr_kind_t::amefflags));
+    add_csr(ztt::kCsrAmexsat,
+            std::make_shared<ztt_csr_t>(proc, &proc->ZTU,
+                                        ztt::kCsrAmexsat,
+                                        ztt_csr_kind_t::amexsat));
+    add_csr(ztt::kCsrAmestatus,
+            std::make_shared<ztt_csr_t>(proc, &proc->ZTU,
+                                        ztt::kCsrAmestatus,
+                                        ztt_csr_kind_t::amestatus));
+  }
 
   add_csr(CSR_MISA, misa = std::make_shared<misa_csr_t>(proc, CSR_MISA, max_isa));
   mstatus = std::make_shared<mstatus_csr_t>(proc, CSR_MSTATUS);

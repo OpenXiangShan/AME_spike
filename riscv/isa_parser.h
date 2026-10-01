@@ -1,3 +1,5 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
 // See LICENSE for license details.
 #ifndef _RISCV_ISA_PARSER_H
 #define _RISCV_ISA_PARSER_H
@@ -120,6 +122,7 @@ typedef enum {
   EXT_SSAIA,
   EXT_ZA64RS,
   EXT_ZA128RS,
+  EXT_ZTT,
   NUM_ISA_EXTENSIONS
 } isa_extension_t;
 

@@ -9,10 +9,10 @@ name: Continuous Integration
 on:
   push:
     branches:
-      - master
+      - ztt-v0.6-dev
   pull_request:
     branches:
-      - master
+      - ztt-v0.6-dev
 
 
 jobs:
@@ -22,21 +22,22 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          # checkout full tree
           fetch-depth: 0
+          submodules: recursive
 
       - name: Install Dependencies
         run: |
           sudo apt-get update
           sudo xargs apt-get install -y < .github/workflows/apt-packages.txt
 
-      - run: |
-          for commit in $(git rev-list origin/master..HEAD | tac); do
-            git checkout $commit
-            echo "Checking commit $commit"
-            ci-tests/build-spike
-            ci-tests/test-spike
-          done
+      - name: Configure
+        run: |
+          mkdir -p build
+          cd build
+          ../configure
+
+      - name: Build and test
+        run: make -C build -j"$(nproc)" check
 
   test-macos:
     name: Test Spike build (MacOS)
@@ -44,15 +45,17 @@ jobs:
     steps:
       - uses: actions/checkout@v2
         with:
-          # checkout full tree
           fetch-depth: 0
+          submodules: recursive
 
       - name: Install Dependencies
         run: xargs brew install --overwrite < .github/workflows/brew-packages.txt
 
-      - run: |
-          for commit in $(git rev-list origin/master..HEAD | tail -r); do
-            git checkout $commit
-            echo "Checking commit $commit"
-            ci-tests/build-spike
-          done
+      - name: Configure
+        run: |
+          mkdir -p build
+          cd build
+          ../configure
+
+      - name: Build
+        run: make -C build -j"$(sysctl -n hw.ncpu)"

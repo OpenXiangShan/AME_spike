@@ -1,4 +1,6 @@
 build-essential
+libboost-regex-dev
+libboost-system-dev
 device-tree-compiler
 g++-riscv64-linux-gnu
 libc6-dev-riscv64-cross

@@ -97,7 +97,7 @@ struct commonNaN { char _unused; };
 | The bit pattern for a default generated 8-bit floating-point NaN.
 *----------------------------------------------------------------------------*/
 #define defaultNaNE4M3 0x7F
-#define defaultNaNE5M2 0x7F
+#define defaultNaNE5M2 0x7E
 
 /*----------------------------------------------------------------------------
 | The bit pattern for a default generated 16-bit floating-point NaN.
@@ -484,4 +484,3 @@ void
 #endif
 
 #endif
-

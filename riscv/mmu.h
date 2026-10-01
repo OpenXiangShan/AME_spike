@@ -1,3 +1,5 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
 // See LICENSE for license details.
 
 #ifndef _RISCV_MMU_H
@@ -97,6 +99,16 @@ private:
   reg_t get_pmlen(bool effective_virt, reg_t effective_priv, xlate_flags_t flags) const;
   mem_access_info_t generate_access_info(reg_t addr, access_type type, xlate_flags_t xlate_flags);
 
+  // Ztt byte transfers use XLEN-sized effective addresses for each byte.
+  // Keep this local to the Ztt helpers so ordinary scalar MMU accesses are
+  // unchanged.
+  reg_t ztt_byte_address(reg_t base, std::size_t offset) const
+  {
+    const reg_t address = base + reg_t(offset);
+    return proc && proc->get_xlen() == 32 ? reg_t(uint32_t(address))
+                                          : address;
+  }
+
 public:
   mmu_t(simif_t* sim, endianness_t endianness, processor_t* proc, reg_t cache_blocksz);
   ~mmu_t();
@@ -153,6 +165,33 @@ public:
       target_endian<T> target_val = to_target(val);
       store_slow_path(addr, sizeof(T), (const uint8_t*)&target_val, xlate_flags, true, false);
     }
+  }
+
+  // AME multi-element stores preflight their complete write set before any
+  // explicit data-memory byte is committed.
+  void ztt_probe_store(reg_t addr, std::size_t len) {
+    for (std::size_t i = 0; i < len; ++i) {
+      const reg_t byte_addr = ztt_byte_address(addr, i);
+      const auto access_info = generate_access_info(byte_addr, STORE, {});
+      const reg_t paddr = translate(access_info, 1);
+      // MMIO participates only when its device explicitly promises a
+      // side-effect-free acceptance check.  This preserves AME's no-partial-
+      // completion guarantee without excluding preflight-capable devices.
+      if (sim->addr_to_mem(paddr) == nullptr &&
+          !sim->mmio_store_preflight(paddr, 1))
+        throw trap_store_access_fault(access_info.effective_virt,
+                                      access_info.transformed_vaddr, 0, 0);
+      store_slow_path(byte_addr, 1, nullptr, {}, false, false);
+    }
+  }
+  void ztt_store_bytes(reg_t addr, const uint8_t* bytes, std::size_t len) {
+    for (std::size_t i = 0; i < len; ++i)
+      store_slow_path(ztt_byte_address(addr, i), 1,
+                      bytes + i, {}, true, false);
+  }
+  void ztt_load_bytes(reg_t addr, uint8_t* bytes, std::size_t len) {
+    for (std::size_t i = 0; i < len; ++i)
+      load_slow_path(ztt_byte_address(addr, i), 1, bytes + i, {});
   }
 
   template<typename T>

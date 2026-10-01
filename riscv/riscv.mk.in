@@ -1,3 +1,7 @@
+# Copyright (c) 2026 BOSC & ICT, CAS
+# All rights reserved.
+# See LICENSE for license details.
+
 get_insn_list = $(shell grep ^DECLARE_INSN $(1) | sed 's/DECLARE_INSN(\(.*\),.*,.*)/\1/')
 get_opcode = $(shell grep ^DECLARE_INSN.*\\\<$(2)\\\> $(1) | sed 's/DECLARE_INSN(.*,\(.*\),.*)/\1/')
 
@@ -48,6 +52,15 @@ riscv_install_hdrs = \
 	trap.h \
 	triggers.h \
 	vector_unit.h \
+	ztt_config.h \
+	ztt_csr.h \
+	ztt_decode.h \
+	ztt_encoding.h \
+	ztt_execute.h \
+	ztt_fp.h \
+	ztt_fp_transcendental.h \
+	ztt_state.h \
+	ztt_validation.h \
 
 riscv_precompiled_hdrs = \
 	insn_template.h \
@@ -76,12 +89,194 @@ riscv_srcs = \
 	csr_init.cc \
 	triggers.cc \
 	vector_unit.cc \
+	ztt_csr.cc \
+	ztt_execute.cc \
+	ztt_fp.cc \
+	ztt_fp_transcendental.cc \
+	ztt_state.cc \
+	ztt_validation.cc \
 	socketif.cc \
 	cfg.cc \
 	$(riscv_gen_srcs) \
 
+riscv_c_srcs = \
+	ztt_core_math_cos_f16.c \
+	ztt_core_math_cos_bf16.c \
+	ztt_core_math_cos_f32.c \
+	ztt_core_math_cos_f64.c \
+	ztt_core_math_sin_f16.c \
+	ztt_core_math_sin_bf16.c \
+	ztt_core_math_sin_f32.c \
+	ztt_core_math_sin_f64.c \
+	ztt_core_math_tanh_f16.c \
+	ztt_core_math_tanh_bf16.c \
+	ztt_core_math_tanh_f32.c \
+	ztt_core_math_tanh_f64.c \
+	ztt_core_math_log2_f16.c \
+	ztt_core_math_log2_bf16.c \
+	ztt_core_math_log2_f32.c \
+	ztt_core_math_log2_f64.c \
+	ztt_core_math_exp2_f16.c \
+	ztt_core_math_exp2_bf16.c \
+	ztt_core_math_exp2_f32.c \
+	ztt_core_math_exp2_f64.c \
+
+ztt_fp_transcendental.o: riscv_CFLAGS += -frounding-math
+ztt_core_math_%.o: riscv_CFLAGS += -frounding-math
+
 riscv_test_srcs = \
   check-opcode-overlap.t.cc \
+  ztt_encoding.t.cc \
+  ztt_decode.t.cc \
+  ztt_semantics.t.cc \
+  ztt_fp_semantics.t.cc \
+  ztt_reference.t.cc \
+  ztt_validation.t.cc \
+  ztt_atomicity.t.cc \
+  ztt_execute.t.cc \
+  ztt_state.t.cc \
+  ztt_issue_regression.t.cc \
+
+riscv_insn_ext_ztt = \
+	ztt_ame_acquire \
+	ztt_ame_release \
+	ztt_agettyp \
+	ztt_asettyp \
+	ztt_mabs_ew \
+	ztt_mabsdiff_ew \
+	ztt_mabsdiff_ew_x \
+	ztt_madd_ew \
+	ztt_madd_ew_x \
+	ztt_mand_ew \
+	ztt_mand_ew_x \
+	ztt_mandnot_ew \
+	ztt_mandnot_ew_x \
+	ztt_mcmovge_ew \
+	ztt_mcmovlt_ew \
+	ztt_mcmpge_ew \
+	ztt_mcmpge_ew_x \
+	ztt_mcmplt_ew \
+	ztt_mcmplt_ew_x \
+	ztt_mcolbcast_ew_x \
+	ztt_mcolgather_ew \
+	ztt_mcolid_ew \
+	ztt_mcolshift_ew_x \
+	ztt_mcolunzip_ew \
+	ztt_mcolzip_ew \
+	ztt_mconv_ew \
+	ztt_mbcast_m_x \
+	ztt_mcos_ew \
+	ztt_mexp2_ew \
+	ztt_mfrintm_ew \
+	ztt_mfrintn_ew \
+	ztt_mfrintp_ew \
+	ztt_mfrintz_ew \
+	ztt_mgettyp \
+	ztt_mhdiff_ew \
+	ztt_mhdiff_ew_x \
+	ztt_mldexp_ew \
+	ztt_mldexp_ew_x \
+	ztt_mldexpacc_ew \
+	ztt_mldexpacc_ew_x \
+	ztt_mlog2_ew \
+	ztt_mlog2sub_ew \
+	ztt_mlog2sub_ew_x \
+	ztt_mls_1r \
+	ztt_mls_cm \
+	ztt_mls_rm \
+	ztt_mls_st \
+	ztt_mls_tst \
+	ztt_mmax_ew \
+	ztt_mmax_ew_x \
+	ztt_mmean_ew \
+	ztt_mmean_ew_x \
+	ztt_mmin_ew \
+	ztt_mmin_ew_x \
+	ztt_mmov_m_a \
+	ztt_mmov_a_m \
+	ztt_mmov_m_m \
+	ztt_mmove8_m_x \
+	ztt_mmove16_m_x \
+	ztt_mmove32_m_x \
+	ztt_mmove64_m_x \
+	ztt_mmove8_x_m \
+	ztt_mmove16_x_m \
+	ztt_mmove32_x_m \
+	ztt_mmove64_x_m \
+	ztt_mmul_ew \
+	ztt_mmul_ew_x \
+	ztt_mmulacc_2d \
+	ztt_mmulacc_ew \
+	ztt_mmulacc_ew_x \
+	ztt_mmulaccneg_2d \
+	ztt_mmulaccneg_ew \
+	ztt_mmulaccneg_ew_x \
+	ztt_mmuladd_ew \
+	ztt_mmuladd_ew_x \
+	ztt_mmulatacc_2d \
+	ztt_mmulataccneg_2d \
+	ztt_mmulbtacc_2d \
+	ztt_mmulbtaccneg_2d \
+	ztt_mmulneg_ew \
+	ztt_mmulneg_ew_x \
+	ztt_mmulsub_ew \
+	ztt_mmulsub_ew_x \
+	ztt_mor_ew \
+	ztt_mor_ew_x \
+	ztt_mornot_ew \
+	ztt_mornot_ew_x \
+	ztt_mpack_ew_x \
+	ztt_mprefixadd_col \
+	ztt_mprefixadd_row \
+	ztt_mprefixmax_col \
+	ztt_mprefixmax_row \
+	ztt_mrdexp_ew \
+	ztt_mrdexpacc_ew \
+	ztt_mrec_ew \
+	ztt_mreduceadd_col \
+	ztt_mreduceadd_row \
+	ztt_mreducemax_col \
+	ztt_mreducemax_row \
+	ztt_mreducemin_col \
+	ztt_mreducemin_row \
+	ztt_mrowbcast_ew_x \
+	ztt_mrowgather_ew \
+	ztt_mrowid_ew \
+	ztt_mrowshift_ew_x \
+	ztt_mrowunzip_ew \
+	ztt_mrowzip_ew \
+	ztt_mrsqrt_ew \
+	ztt_mrowscatadd_ew \
+	ztt_mcolscatadd_ew \
+	ztt_mrowscatmax_ew \
+	ztt_mcolscatmax_ew \
+	ztt_mselge_ew \
+	ztt_msellt_ew \
+	ztt_msettyp \
+	ztt_msin_ew \
+	ztt_msll_ew \
+	ztt_msll_ew_x \
+	ztt_msqrt_ew \
+	ztt_msra_ew \
+	ztt_msra_ew_x \
+	ztt_msrl_ew \
+	ztt_msrl_ew_x \
+	ztt_mss_1r \
+	ztt_mss_cm \
+	ztt_mss_rm \
+	ztt_mss_st \
+	ztt_mss_tst \
+	ztt_msub_ew \
+	ztt_msub_ew_x \
+	ztt_msublog2_ew \
+	ztt_msublog2_ew_x \
+	ztt_mtanh_ew \
+	ztt_munpack_ew_x \
+	ztt_mxor_ew \
+	ztt_mxor_ew_x \
+	ztt_mzero_2d_acc \
+	ztt_mzero_2d_m
+
 
 riscv_gen_hdrs = \
 	insn_list.h \
@@ -1801,6 +1996,7 @@ riscv_insn_list = \
 	$(riscv_insn_ext_zcmop) \
 	$(riscv_insn_ext_zicfilp) \
 	$(riscv_insn_ext_zicfiss) \
+	$(riscv_insn_ext_ztt) \
 
 riscv_gen_srcs = $(addsuffix .cc,$(riscv_insn_list))
 

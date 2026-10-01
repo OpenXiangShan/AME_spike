@@ -1,3 +1,5 @@
+// Copyright (c) 2026 BOSC & ICT, CAS
+// All rights reserved.
 // See LICENSE for license details.
 
 #include "arith.h"
@@ -153,6 +155,8 @@ void processor_t::reset()
   mmu->flush_tlb();
   if (any_vector_extensions())
     VU.reset();
+  if (extension_enabled(EXT_ZTT))
+    ZTU.reset();
   in_wfi = false;
 
   if (n_pmp > 0) {
