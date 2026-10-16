@@ -144,7 +144,21 @@ jobs:
           xargs brew install --overwrite < .github/workflows/brew-packages.txt \
             2>&1 | tee "$CI_WORKDIR/dependencies.log"
           boost="$(brew --prefix boost)"
-          echo "CPPFLAGS=-I$boost/include -include errno.h -include stdlib.h ${CPPFLAGS:-}" >> "$GITHUB_ENV"
+          cat > "$CI_WORKDIR/macos-boost-multiprecision.h" <<'EOF'
+          #ifndef AME_MACOS_BOOST_MULTIPRECISION_COMPAT_H
+          #define AME_MACOS_BOOST_MULTIPRECISION_COMPAT_H
+          /*
+           * build-spike's configure probes do not use -O2, while the
+           * generated make rules do.  Avoid changing configure's pthread
+           * probes, but preload Boost before Spike's serialize macro during
+           * actual C++ compilation.
+           */
+          #if defined(__cplusplus) && defined(__OPTIMIZE__)
+          #include <boost/multiprecision/cpp_int.hpp>
+          #endif
+          #endif
+          EOF
+          echo "CPPFLAGS=-isystem$boost/include -include $CI_WORKDIR/macos-boost-multiprecision.h -include errno.h -include stdlib.h -Wno-pragma-clang-attribute ${CPPFLAGS:-}" >> "$GITHUB_ENV"
           echo "LDFLAGS=-L$boost/lib ${LDFLAGS:-}" >> "$GITHUB_ENV"
 
       - name: Select Homebrew LLVM toolchain
