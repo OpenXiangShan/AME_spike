@@ -158,7 +158,7 @@ jobs:
           #endif
           #endif
           EOF
-          echo "CPPFLAGS=-isystem$boost/include -include $CI_WORKDIR/macos-boost-multiprecision.h -include errno.h -include stdlib.h -Wno-pragma-clang-attribute -Wno-error=c99-designator ${CPPFLAGS:-}" >> "$GITHUB_ENV"
+          echo "CPPFLAGS=-isystem$boost/include -include $CI_WORKDIR/macos-boost-multiprecision.h -include errno.h -include stdlib.h -Wno-pragma-clang-attribute -Wno-error=c99-designator -Wno-error=unused-const-variable ${CPPFLAGS:-}" >> "$GITHUB_ENV"
           echo "LDFLAGS=-L$boost/lib ${LDFLAGS:-}" >> "$GITHUB_ENV"
 
       - name: Select Homebrew LLVM toolchain
