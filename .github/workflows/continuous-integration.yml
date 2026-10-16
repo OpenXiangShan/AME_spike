@@ -147,6 +147,26 @@ jobs:
           echo "CPPFLAGS=-I$boost/include ${CPPFLAGS:-}" >> "$GITHUB_ENV"
           echo "LDFLAGS=-L$boost/lib ${LDFLAGS:-}" >> "$GITHUB_ENV"
 
+      - name: Select Homebrew LLVM toolchain
+        timeout-minutes: 10
+        run: |
+          set -euo pipefail
+          brew install llvm 2>&1 | tee "$CI_WORKDIR/llvm.log"
+          llvm_prefix="$(brew --prefix llvm)"
+          test -x "$llvm_prefix/bin/clang"
+          test -x "$llvm_prefix/bin/clang++"
+          test -x "$llvm_prefix/bin/llvm-ar"
+          test -x "$llvm_prefix/bin/llvm-ranlib"
+          {
+            echo "CC=$llvm_prefix/bin/clang"
+            echo "CXX=$llvm_prefix/bin/clang++"
+            echo "AR=$llvm_prefix/bin/llvm-ar"
+            echo "RANLIB=$llvm_prefix/bin/llvm-ranlib"
+            echo "PATH=$llvm_prefix/bin:$PATH"
+          } >> "$GITHUB_ENV"
+          "$llvm_prefix/bin/clang" --version
+          "$llvm_prefix/bin/clang++" --version
+
       - name: Initialize pinned core-math submodule
         timeout-minutes: 12
         run: |
@@ -163,6 +183,10 @@ jobs:
         timeout-minutes: 100
         run: |
           set -euo pipefail
+          printf 'CC=%s\nCXX=%s\nAR=%s\nRANLIB=%s\n' \
+            "$CC" "$CXX" "$AR" "$RANLIB"
+          "$CC" --version
+          "$CXX" --version
           cd "$CI_WORKDIR"
           "$GITHUB_WORKSPACE/ci-tests/build-spike" 2>&1 | tee build.log
 
