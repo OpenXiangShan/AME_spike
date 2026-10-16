@@ -204,6 +204,61 @@ jobs:
           cd "$CI_WORKDIR"
           "$GITHUB_WORKSPACE/ci-tests/build-spike" 2>&1 | tee build.log
 
+      - name: Diagnose ztt_fp_semantics assertion with LLDB
+        if: failure()
+        timeout-minutes: 15
+        run: |
+          set -u
+          diag_log="$CI_WORKDIR/lldb.log"
+          {
+            echo "[DIAG] Original macOS build/test step failed; this is diagnostic only."
+            echo "[DIAG] Searching for ztt_fp_semantics-utst under $CI_WORKDIR/build/spike"
+            if [[ ! -d "$CI_WORKDIR/build/spike" ]]; then
+              echo "[DIAG][FAIL] Build directory does not exist."
+              exit 1
+            fi
+
+            cd "$CI_WORKDIR/build/spike"
+            test_bin="$(find . -type f -name ztt_fp_semantics-utst -print -quit)"
+            if [[ -z "$test_bin" ]]; then
+              echo "[DIAG][FAIL] ztt_fp_semantics-utst was not produced."
+              exit 1
+            fi
+            if [[ ! -x "$test_bin" ]]; then
+              echo "[DIAG][FAIL] Found $test_bin, but it is not executable."
+              exit 1
+            fi
+            if ! command -v lldb >/dev/null 2>&1; then
+              echo "[DIAG][FAIL] LLDB is unavailable on this macOS runner."
+              exit 1
+            fi
+
+            echo "[DIAG] Executable: $PWD/$test_bin"
+            echo "[DIAG] LLDB version:"
+            lldb --version
+            echo "[DIAG] Running: lldb --batch $test_bin default"
+
+            set +e
+            lldb --batch \
+              -o 'settings set target.inline-breakpoint-strategy always' \
+              -o 'breakpoint set --name __assert_rtn' \
+              -o 'breakpoint set --name abort' \
+              -o 'run default' \
+              -o 'process status' \
+              -o 'thread backtrace all' \
+              -o 'frame info' \
+              -- "$test_bin" default
+            lldb_rc=$?
+            set -e
+            echo "[DIAG] LLDB exit code: $lldb_rc"
+            if (( lldb_rc != 0 )); then
+              echo "[DIAG][FAIL] LLDB could not complete the diagnostic run."
+              exit "$lldb_rc"
+            fi
+            echo "[DIAG] LLDB diagnostic completed; no PASS is inferred."
+          } 2>&1 | tee "$diag_log"
+          exit "${PIPESTATUS[0]}"
+
       - name: Upload logs, including failed runs
         if: always() && env.CI_WORKDIR != ''
         uses: actions/upload-artifact@v4
