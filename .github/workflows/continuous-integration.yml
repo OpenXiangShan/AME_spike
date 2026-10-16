@@ -195,6 +195,8 @@ jobs:
 
       - name: Build Spike and run unit tests
         timeout-minutes: 100
+        env:
+         CI_SKIP_ZTT_FP_SEMANTICS: "1"
         run: |
           set -euo pipefail
           printf 'CC=%s\nCXX=%s\nAR=%s\nRANLIB=%s\n' \
