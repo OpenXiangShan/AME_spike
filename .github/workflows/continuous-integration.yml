@@ -144,7 +144,7 @@ jobs:
           xargs brew install --overwrite < .github/workflows/brew-packages.txt \
             2>&1 | tee "$CI_WORKDIR/dependencies.log"
           boost="$(brew --prefix boost)"
-          echo "CPPFLAGS=-I$boost/include ${CPPFLAGS:-}" >> "$GITHUB_ENV"
+          echo "CPPFLAGS=-I$boost/include -include errno.h -include stdlib.h ${CPPFLAGS:-}" >> "$GITHUB_ENV"
           echo "LDFLAGS=-L$boost/lib ${LDFLAGS:-}" >> "$GITHUB_ENV"
 
       - name: Select Homebrew LLVM toolchain
