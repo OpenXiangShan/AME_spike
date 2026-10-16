@@ -28,7 +28,8 @@
   ZTT_R2 0x51, \ms, \xreg, 0x1b
 .endm
 .macro FAIL code
-  li t6, \code
+  /* Spike decodes a test result as (tohost >> 1); bit 0 marks a result. */
+  li t6, ((\code) * 2 + 1)
   j fail
 .endm
 
@@ -322,38 +323,63 @@ _start:
 23: FAIL 12
 24:
 
-  /* Datatype masking, CSR state, unsupported probe, and release. */
+  /* Datatype masking, invalid MSETTYP atomicity, unsupported probe, and release. */
   li t0, 0x10040000020
   MSETTYP 28, 5
   MGETTYP 6, 28
   li t0, 0x40000020
-  bne t1, t0, 25f
+  bne t1, t0, dtype_mask_fail
+
+  /* A rejected MSETTYP must preserve both Md and the M register group. */
+  la s0, matrix_1_to_16
+  MLS_RM 28, 8
   csrw 0x800, zero
   li t0, 0
   MSETTYP 28, 5
   csrr t0, 0x800
-  bnez t0, 25f
+  li t1, 1
+  bne t0, t1, dtype_zero_status_fail
   MGETTYP 6, 28
-  bnez t1, 25f
-  /* A subsequent operation using the invalid type must set UN. */
-  ZTT_R3 0x02, 28, 28, 28
+  li t0, 0x40000020
+  bne t1, t0, dtype_zero_md_fail
+  la s0, dtype_zero_out
+  MSS_RM 28, 8
+  la a0, dtype_zero_out
+  la a1, matrix_1_to_16
+  li a2, 64
+  call compare_bytes
+  bnez a0, dtype_zero_data_fail
+
+  /*
+   * M30 has never received a datatype.  After clearing the previous UN,
+   * using that uninitialized datatype must set UN independently.
+   */
+  csrw 0x800, zero
+  ZTT_R3 0x02, 30, 30, 30
   csrr t0, 0x800
   li t1, 1
-  bne t0, t1, 25f
+  bne t0, t1, dtype_un_status_fail
   csrw 0x800, zero
   csrr t0, 0x800
-  bnez t0, 25f
+  bnez t0, dtype_clear_status_fail
   csrr t0, mstatus
   srli t0, t0, 25
   andi t0, t0, 3
   li t1, 3
-  bne t0, t1, 25f
+  bne t0, t1, dtype_mstatus_fail
   ZTT_R2 0x52, 0, 0, 0x0a
   csrr t0, 0xcc3
-  bnez t0, 25f
+  bnez t0, dtype_release_status_fail
   li t6, 1
   j finish
-25: FAIL 13
+dtype_mask_fail: FAIL 13
+dtype_zero_status_fail: FAIL 14
+dtype_zero_md_fail: FAIL 15
+dtype_zero_data_fail: FAIL 16
+dtype_un_status_fail: FAIL 17
+dtype_clear_status_fail: FAIL 18
+dtype_mstatus_fail: FAIL 19
+dtype_release_status_fail: FAIL 20
 
 /* a0=lhs, a1=rhs, a2=size; return a0=0 when equal. */
 compare_bytes:
@@ -506,6 +532,7 @@ fp_out: .zero 64
 fp_max_out: .zero 64
 fp_min_out: .zero 64
 fp_trans_out: .zero 64
+dtype_zero_out: .zero 64
 
 .section .tohost,"aw",@progbits
 .balign 8
