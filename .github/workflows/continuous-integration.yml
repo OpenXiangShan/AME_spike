@@ -1,61 +1,180 @@
-# This file describes the GitHub Actions workflow for continuous integration of Spike.
-#
-# See
-# https://help.github.com/en/actions/reference/workflow-syntax-for-github-actions
-# for API reference documentation on this file format.
-
+# Keep the upstream Spike Ubuntu/macOS job structure.
 name: Continuous Integration
 
 on:
   push:
-    branches:
-      - ztt-v0.6-dev
+    branches: [ztt-v0.6-dev]
   pull_request:
-    branches:
-      - ztt-v0.6-dev
+    branches: [ztt-v0.6-dev]
+    types: [opened, reopened, synchronize, ready_for_review]
+  workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  OMP_THREAD_LIMIT: '2'
+
+defaults:
+  run:
+    shell: bash
 
 jobs:
   test:
     name: Test Spike build (Ubuntu)
     runs-on: ubuntu-24.04
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
           fetch-depth: 0
-          submodules: recursive
+          submodules: false
+          persist-credentials: false
+
+      - name: Create isolated build and regression directory
+        run: |
+          work="$(mktemp -d "$GITHUB_WORKSPACE/.ci-work.XXXXXX")"
+          echo "CI_WORKDIR=$work" >> "$GITHUB_ENV"
+
+      - name: Check whitespace and Bash syntax
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          git diff --check
+          if [[ "$EVENT_NAME" == pull_request ]]; then
+            merge_base="$(git merge-base "$BASE_SHA" "$HEAD_SHA")"
+            git diff --check "$merge_base" "$HEAD_SHA"
+          elif [[ "$EVENT_NAME" == push && -n "$BEFORE_SHA" &&
+            "$BEFORE_SHA" != 0000000000000000000000000000000000000000 ]] &&
+            git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null; then
+            git diff --check "$BEFORE_SHA" HEAD
+          elif git rev-parse --verify HEAD^ >/dev/null 2>&1; then
+            git diff --check HEAD^ HEAD
+          else
+            git diff-tree --check --root HEAD
+          fi
+          for script in ci-tests/build-spike ci-tests/test-spike \
+            ci-tests/test-spike-ci ci-tests/test-mnret-double-trap; do
+            test -f "$script"
+            bash -n "$script"
+          done
+          while IFS= read -r -d '' script; do
+            bash -n "$script"
+          done < <(git ls-files -z -- '*.sh')
+          test -x ci-tests/build-spike
+          test -x ci-tests/test-spike-ci
 
       - name: Install Dependencies
+        timeout-minutes: 15
         run: |
-          sudo apt-get update
-          sudo xargs apt-get install -y < .github/workflows/apt-packages.txt
+          set -euo pipefail
+          {
+            sudo apt-get update
+            sudo xargs apt-get install -y < .github/workflows/apt-packages.txt
+          } 2>&1 | tee "$CI_WORKDIR/dependencies.log"
 
-      - name: Configure
+      - name: Initialize pinned core-math submodule
+        timeout-minutes: 12
         run: |
-          mkdir -p build
-          cd build
-          ../configure
+          set -euo pipefail
+          {
+            git submodule update --init core-math
+            expected="$(git rev-parse HEAD:core-math)"
+            actual="$(git -C core-math rev-parse HEAD)"
+            test "$actual" = "$expected"
+            printf 'core-math: %s\n' "$actual"
+          } 2>&1 | tee "$CI_WORKDIR/core-math.log"
 
-      - name: Build and test
-        run: make -C build -j"$(nproc)" check
+      # Test the checked-out revision; the upstream commit loop can be empty on push.
+      - name: Build Spike and run unit tests
+        timeout-minutes: 85
+        run: |
+          set -euo pipefail
+          cd "$CI_WORKDIR"
+          "$GITHUB_WORKSPACE/ci-tests/build-spike" 2>&1 | tee build.log
+
+      - name: Run baseline and existing Ztt regressions
+        timeout-minutes: 20
+        run: |
+          set -euo pipefail
+          cd "$CI_WORKDIR"
+          "$GITHUB_WORKSPACE/ci-tests/test-spike-ci" 2>&1 | tee regression.log
+
+      - name: Upload logs, including failed runs
+        if: always() && env.CI_WORKDIR != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-ubuntu-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            ${{ env.CI_WORKDIR }}/*.log
+            ${{ env.CI_WORKDIR }}/build/spike/*-utst.out
+            ${{ env.CI_WORKDIR }}/build/spike/install-hdrs-list.h
 
   test-macos:
     name: Test Spike build (MacOS)
     runs-on: macos-15
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v4
         with:
-          fetch-depth: 0
-          submodules: recursive
+          submodules: false
+          persist-credentials: false
+
+      - name: Create isolated build directory
+        run: |
+          work="$(mktemp -d "$GITHUB_WORKSPACE/.ci-work.XXXXXX")"
+          echo "CI_WORKDIR=$work" >> "$GITHUB_ENV"
 
       - name: Install Dependencies
-        run: xargs brew install --overwrite < .github/workflows/brew-packages.txt
-
-      - name: Configure
+        timeout-minutes: 25
         run: |
-          mkdir -p build
-          cd build
-          ../configure
+          set -euo pipefail
+          xargs brew install --overwrite < .github/workflows/brew-packages.txt \
+            2>&1 | tee "$CI_WORKDIR/dependencies.log"
+          boost="$(brew --prefix boost)"
+          echo "CPPFLAGS=-I$boost/include ${CPPFLAGS:-}" >> "$GITHUB_ENV"
+          echo "LDFLAGS=-L$boost/lib ${LDFLAGS:-}" >> "$GITHUB_ENV"
 
-      - name: Build
-        run: make -C build -j"$(sysctl -n hw.ncpu)"
+      - name: Initialize pinned core-math submodule
+        timeout-minutes: 12
+        run: |
+          set -euo pipefail
+          {
+            git submodule update --init core-math
+            expected="$(git rev-parse HEAD:core-math)"
+            actual="$(git -C core-math rev-parse HEAD)"
+            test "$actual" = "$expected"
+            printf 'core-math: %s\n' "$actual"
+          } 2>&1 | tee "$CI_WORKDIR/core-math.log"
+
+      - name: Build Spike and run unit tests
+        timeout-minutes: 100
+        run: |
+          set -euo pipefail
+          cd "$CI_WORKDIR"
+          "$GITHUB_WORKSPACE/ci-tests/build-spike" 2>&1 | tee build.log
+
+      - name: Upload logs, including failed runs
+        if: always() && env.CI_WORKDIR != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: spike-macos-${{ github.run_id }}-${{ github.run_attempt }}
+          retention-days: 14
+          if-no-files-found: error
+          include-hidden-files: true
+          path: |
+            ${{ env.CI_WORKDIR }}/*.log
+            ${{ env.CI_WORKDIR }}/build/spike/*-utst.out
+            ${{ env.CI_WORKDIR }}/build/spike/install-hdrs-list.h
