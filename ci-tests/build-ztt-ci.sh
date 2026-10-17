@@ -40,11 +40,13 @@ if [[ -n "${ZTT_CI_CORE_MATH_MIRROR:-}" ]]; then
     echo "core-math mirror is missing or unreadable: $core_math_mirror" >&2
     exit 2
   fi
-  if ! git -C "$core_math_mirror" rev-parse --git-dir >/dev/null 2>&1; then
+  if ! git -c "safe.directory=$core_math_mirror" \
+    -C "$core_math_mirror" rev-parse --git-dir >/dev/null; then
     echo "core-math mirror is not a readable Git repository: $core_math_mirror" >&2
     exit 2
   fi
-  if ! git -C "$core_math_mirror" cat-file -e "${expected_core_math}^{commit}" 2>/dev/null; then
+  if ! git -c "safe.directory=$core_math_mirror" \
+    -C "$core_math_mirror" cat-file -e "${expected_core_math}^{commit}"; then
     echo "core-math mirror does not contain the source gitlink commit" >&2
     echo "mirror: $core_math_mirror" >&2
     echo "required: $expected_core_math" >&2
@@ -57,7 +59,8 @@ if [[ -n "${ZTT_CI_CORE_MATH_MIRROR:-}" ]]; then
     echo "refusing to replace a non-empty core-math path: $ROOT/core-math" >&2
     exit 2
   fi
-  git -c protocol.file.allow=always \
+  git -c "safe.directory=$core_math_mirror" \
+    -c protocol.file.allow=always \
     -c "submodule.core-math.url=$core_math_mirror" \
     submodule update --init --recursive core-math
 elif [[ -f "$ROOT/.gitmodules" ]]; then

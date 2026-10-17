@@ -221,6 +221,12 @@ jobs:
     runs-on: [self-hosted, linux, x64, bosc, open]
     timeout-minutes: 10
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+
       - name: Enforce selected regression and full-scope completion
         run: |
           set -euo pipefail
