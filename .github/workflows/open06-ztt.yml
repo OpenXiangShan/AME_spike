@@ -1,0 +1,261 @@
+name: open06 Ztt regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ztt-v0.6-dev]
+    types: [opened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open06-ztt-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build Spike on open06
+    # A self-hosted machine executes PR code only for a PR branch in this repo.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (
+        github.event.pull_request.draft == false &&
+        github.event.pull_request.head.repo.full_name == github.repository
+      )
+    runs-on: [self-hosted, linux, x64, bosc, open]
+    timeout-minutes: 120
+    env:
+      ZTT_CI_BUILD_JOBS: "2"
+    outputs:
+      artifact: ${{ steps.meta.outputs.artifact }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+
+      - name: Allocate isolated build directory
+        id: meta
+        run: |
+          set -euo pipefail
+          : "${ZTT_CI_LOG_ROOT:?configure ZTT_CI_LOG_ROOT in the open06 runner environment}"
+          build_root="$RUNNER_TEMP/open06-ztt-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          build_log="$RUNNER_TEMP/open06-ztt-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+          durable_root="$ZTT_CI_LOG_ROOT/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          mkdir -p "$durable_root"
+          echo "build_root=$build_root" >> "$GITHUB_ENV"
+          echo "build_log=$build_log" >> "$GITHUB_ENV"
+          echo "durable_root=$durable_root" >> "$GITHUB_ENV"
+          echo "build_root=$build_root" >> "$GITHUB_OUTPUT"
+          echo "build_log=$build_log" >> "$GITHUB_OUTPUT"
+          echo "durable_root=$durable_root" >> "$GITHUB_OUTPUT"
+          echo "artifact=open06-ztt-spike-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}" >> "$GITHUB_OUTPUT"
+
+      - name: Build current commit
+        run: |
+          set -Eeuo pipefail
+          ci-tests/build-ztt-ci.sh "$build_root" 2>&1 |
+            tee "$build_log" "$durable_root/build.log"
+
+      - name: Record source and Spike identity
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$build_root/logs" "$durable_root"
+          {
+            echo "commit=$GITHUB_SHA"
+            if test -x "$build_root/install/bin/spike"; then
+              sha256sum "$build_root/install/bin/spike"
+            fi
+            git submodule status || true
+          } | tee "$build_root/logs/identity.log" "$durable_root/identity.log"
+
+      - name: Upload build and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ steps.meta.outputs.artifact }}
+          retention-days: 14
+          if-no-files-found: warn
+          path: |
+            ${{ steps.meta.outputs.build_root }}/install
+            ${{ steps.meta.outputs.build_root }}/logs
+            ${{ steps.meta.outputs.build_log }}
+            ${{ steps.meta.outputs.build_root }}/build-metadata.env
+            ${{ steps.meta.outputs.build_root }}/spike.sha256
+
+  regression:
+    name: open06 group ${{ matrix.group }}
+    needs: build
+    if: needs.build.result == 'success'
+    runs-on: [self-hosted, linux, x64, bosc, open]
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        group: [0, 1, 2, 3, 4, 5]
+    env:
+      # This must be configured on the open06 runner/service environment.
+      # It is intentionally not a repository-specific absolute path.
+      ZTT_CI_TIMEOUT_SECONDS: "30"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Download the current-commit Spike
+        uses: actions/download-artifact@v4
+        with:
+          name: ${{ needs.build.outputs.artifact }}
+          path: ${{ runner.temp }}/open06-ztt-spike
+
+      - name: Check downloaded Spike
+        run: |
+          set -euo pipefail
+          spike="$RUNNER_TEMP/open06-ztt-spike/install/bin/spike"
+          chmod 0755 "$spike"
+          test -x "$spike"
+
+      - name: Run manifest-selected group
+        run: |
+          set -euo pipefail
+          : "${ZTT_CI_ASSET_ROOT:?configure ZTT_CI_ASSET_ROOT in the open06 runner environment}"
+          : "${ZTT_CI_LOG_ROOT:?configure ZTT_CI_LOG_ROOT in the open06 runner environment}"
+          report_root="$ZTT_CI_LOG_ROOT/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/group-${{ matrix.group }}"
+          artifact_root="$RUNNER_TEMP/open06-ztt-report-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${{ matrix.group }}"
+          echo "report_root=$report_root" >> "$GITHUB_ENV"
+          echo "artifact_root=$artifact_root" >> "$GITHUB_ENV"
+          mkdir -p "$report_root"
+          status=0
+          python3 ci-tests/run-ztt-ci.py \
+            --asset-root "$ZTT_CI_ASSET_ROOT" \
+            --spike "$RUNNER_TEMP/open06-ztt-spike/install/bin/spike" \
+            --output "$report_root" \
+            --group-index "${{ matrix.group }}" \
+            --group-count 6 \
+            --timeout-seconds "$ZTT_CI_TIMEOUT_SECONDS" || status=$?
+          mkdir -p "$artifact_root"
+          cd "$report_root"
+          find . -type f \( -name run.log -o -name trace.log -o -name comparison.json \) \
+            -exec cp --parents {} "$artifact_root" \;
+          cp summary.json "$artifact_root/summary.json"
+          if test -d failure-evidence; then
+            cp -a failure-evidence "$artifact_root/"
+          fi
+          exit "$status"
+
+      - name: Upload group reports and failure evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open06-ztt-regression-${{ github.run_id }}-${{ github.run_attempt }}-group-${{ matrix.group }}
+          retention-days: 14
+          if-no-files-found: warn
+          include-hidden-files: true
+          path: |
+            ${{ runner.temp }}/open06-ztt-report-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.group }}/summary.json
+            ${{ runner.temp }}/open06-ztt-report-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.group }}/**/run.log
+            ${{ runner.temp }}/open06-ztt-report-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.group }}/**/trace.log
+            ${{ runner.temp }}/open06-ztt-report-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.group }}/**/comparison.json
+            ${{ runner.temp }}/open06-ztt-report-${{ github.run_id }}-${{ github.run_attempt }}-${{ matrix.group }}/failure-evidence
+
+  aggregate:
+    name: Aggregate open06 regression
+    needs: [build, regression]
+    if: always() && needs.build.result == 'success'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Download all group summaries
+        uses: actions/download-artifact@v4
+        with:
+          pattern: open06-ztt-regression-${{ github.run_id }}-${{ github.run_attempt }}-group-*
+          path: group-reports
+          merge-multiple: false
+
+      - name: Enforce selected regression and full-scope completion
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          summaries = sorted(Path("group-reports").rglob("summary.json"))
+          errors = []
+          if len(summaries) != 6:
+              errors.append(f"expected 6 group summaries, found {len(summaries)}")
+          data = []
+          for path in summaries:
+              try:
+                  data.append(json.loads(path.read_text()))
+              except (OSError, json.JSONDecodeError) as exc:
+                  errors.append(f"cannot read {path}: {exc}")
+          if any(item.get("status") != "PASS" for item in data):
+              errors.append("one or more selected open06 groups failed")
+          selected_programs = sum(item.get("selected_programs", 0) for item in data)
+          selected_cases = sum(item.get("selected_cases", 0) for item in data)
+          if selected_programs != 1049:
+              errors.append(
+                  "selected regression did not cover all 1,049 manifest ELF files"
+              )
+          if selected_cases <= 0:
+              errors.append("no cases were executed")
+          if any(item.get("manifest_programs") != 1049 for item in data):
+              errors.append("a group did not validate the complete manifest set")
+          if any(item.get("errors") for item in data):
+              errors.append("a group reported validation errors")
+          status = "PASS" if not errors else "FAIL"
+          summary = {
+              "status": status,
+              "selected_regression": status,
+              "selected_programs": selected_programs,
+              "selected_cases": selected_cases,
+              "all_asset_scope_complete": not errors and selected_programs == 1049,
+              "errors": errors,
+              "groups": data,
+              "note": (
+                  "All 67 manifests and 1,049 ELF files were selected and passed."
+                  if not errors
+                  else "The selected regression or its coverage obligation failed."
+              ),
+          }
+          Path("group-reports/summary.json").write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n"
+          )
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          if errors:
+              raise SystemExit(1)
+          PY
+
+      - name: Upload aggregate summary
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open06-ztt-regression-${{ github.run_id }}-${{ github.run_attempt }}-summary
+          retention-days: 14
+          if-no-files-found: warn
+          path: group-reports/summary.json
+
+      - name: Publish aggregate summary
+        if: always()
+        run: |
+          {
+            echo "## open06 Ztt regression"
+            echo
+            echo "The matrix covers the selected 67-manifest scope: base_000 plus partition_0000..partition_0065."
+            echo "See the uploaded group artifacts for per-ELF logs, traces, signatures, and failure evidence."
+            if test -f group-reports/summary.json; then
+              echo
+              echo '```json'
+              cat group-reports/summary.json
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
