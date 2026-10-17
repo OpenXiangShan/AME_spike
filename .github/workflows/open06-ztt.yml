@@ -23,10 +23,7 @@ jobs:
     # A self-hosted machine executes PR code only for a PR branch in this repo.
     if: >-
       github.event_name == 'workflow_dispatch' ||
-      (
-        github.event.pull_request.draft == false &&
-        github.event.pull_request.head.repo.full_name == github.repository
-      )
+      github.event.pull_request.draft == false
     runs-on: [self-hosted, linux, x64, bosc, open]
     timeout-minutes: 120
     env:
