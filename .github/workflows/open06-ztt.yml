@@ -46,7 +46,7 @@ jobs:
           if [[ -n "${ZTT_CI_LOG_ROOT:-}" ]]; then
             log_root="$ZTT_CI_LOG_ROOT"
           else
-            log_root="$RUNNER_TEMP/open06-ztt-log-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            log_root="/nfs/share/ci-runner-RAISA/spike_run_files/ci-results"
             echo "ZTT_CI_LOG_ROOT=$log_root" >> "$GITHUB_ENV"
           fi
           durable_root="$log_root/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
@@ -116,7 +116,7 @@ jobs:
     env:
       # These roots are supplied by the open06 runner/service environment.
       # ZTT_CI_ASSET_ROOT is required; ZTT_CI_LOG_ROOT is optional and falls
-      # back to an isolated RUNNER_TEMP directory when it is not supplied.
+      # back to the shared ci-results directory when it is not supplied.
       ZTT_CI_TIMEOUT_SECONDS: "30"
     steps:
       - uses: actions/checkout@v4
@@ -149,7 +149,7 @@ jobs:
           if [[ -n "${ZTT_CI_LOG_ROOT:-}" ]]; then
             log_root="$ZTT_CI_LOG_ROOT"
           else
-            log_root="$RUNNER_TEMP/open06-ztt-log-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            log_root="/nfs/share/ci-runner-RAISA/spike_run_files/ci-results"
             echo "ZTT_CI_LOG_ROOT=$log_root" >> "$GITHUB_ENV"
           fi
           report_root="$log_root/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/group-${{ matrix.group }}"
