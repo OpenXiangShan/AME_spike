@@ -59,10 +59,14 @@ if [[ -n "${ZTT_CI_CORE_MATH_MIRROR:-}" ]]; then
     echo "refusing to replace a non-empty core-math path: $ROOT/core-math" >&2
     exit 2
   fi
-  git -c "safe.directory=$core_math_mirror" \
-    -c protocol.file.allow=always \
-    -c "submodule.core-math.url=$core_math_mirror" \
-    submodule update --init --recursive core-math
+  GIT_CONFIG_COUNT=3 \
+    GIT_CONFIG_KEY_0=safe.directory \
+    GIT_CONFIG_VALUE_0="$core_math_mirror" \
+    GIT_CONFIG_KEY_1=protocol.file.allow \
+    GIT_CONFIG_VALUE_1=always \
+    GIT_CONFIG_KEY_2=submodule.core-math.url \
+    GIT_CONFIG_VALUE_2="$core_math_mirror" \
+    git submodule update --init --recursive core-math
 elif [[ -f "$ROOT/.gitmodules" ]]; then
   git -C "$ROOT" submodule sync -- core-math
   git -C "$ROOT" submodule update --init --recursive core-math
