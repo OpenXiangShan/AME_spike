@@ -41,11 +41,26 @@ jobs:
         id: meta
         run: |
           set -euo pipefail
-          : "${ZTT_CI_LOG_ROOT:?configure ZTT_CI_LOG_ROOT in the open06 runner environment}"
           build_root="$RUNNER_TEMP/open06-ztt-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
           build_log="$RUNNER_TEMP/open06-ztt-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
-          durable_root="$ZTT_CI_LOG_ROOT/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
-          mkdir -p "$durable_root"
+          if [[ -n "${ZTT_CI_LOG_ROOT:-}" ]]; then
+            log_root="$ZTT_CI_LOG_ROOT"
+          else
+            log_root="$RUNNER_TEMP/open06-ztt-log-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            echo "ZTT_CI_LOG_ROOT=$log_root" >> "$GITHUB_ENV"
+          fi
+          durable_root="$log_root/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          test -d "$RUNNER_TEMP" && test -w "$RUNNER_TEMP"
+          if ! mkdir -p "$durable_root"; then
+            echo "cannot create writable open06 log directory: $durable_root" >&2
+            exit 1
+          fi
+          test -d "$durable_root" && test -w "$durable_root"
+          write_probe="$durable_root/.open06-ztt-write-test"
+          if ! (umask 077 && : > "$write_probe") || ! rm -f "$write_probe"; then
+            echo "open06 log directory is not writable: $durable_root" >&2
+            exit 1
+          fi
           echo "build_root=$build_root" >> "$GITHUB_ENV"
           echo "build_log=$build_log" >> "$GITHUB_ENV"
           echo "durable_root=$durable_root" >> "$GITHUB_ENV"
@@ -99,8 +114,9 @@ jobs:
       matrix:
         group: [0, 1, 2, 3, 4, 5]
     env:
-      # This must be configured on the open06 runner/service environment.
-      # It is intentionally not a repository-specific absolute path.
+      # These roots are supplied by the open06 runner/service environment.
+      # ZTT_CI_ASSET_ROOT is required; ZTT_CI_LOG_ROOT is optional and falls
+      # back to an isolated RUNNER_TEMP directory when it is not supplied.
       ZTT_CI_TIMEOUT_SECONDS: "30"
     steps:
       - uses: actions/checkout@v4
@@ -124,16 +140,34 @@ jobs:
       - name: Run manifest-selected group
         run: |
           set -euo pipefail
-          : "${ZTT_CI_ASSET_ROOT:?configure ZTT_CI_ASSET_ROOT in the open06 runner environment}"
-          : "${ZTT_CI_LOG_ROOT:?configure ZTT_CI_LOG_ROOT in the open06 runner environment}"
-          report_root="$ZTT_CI_LOG_ROOT/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/group-${{ matrix.group }}"
           artifact_root="$RUNNER_TEMP/open06-ztt-report-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}-${{ matrix.group }}"
+          asset_root="${ZTT_CI_ASSET_ROOT:-/nfs/share/ci-runner-RAISA/spike_run_files/verify-all-fixed}"
+          if [[ ! -d "$asset_root" || ! -r "$asset_root" || ! -x "$asset_root" ]]; then
+            echo "open06 asset directory is not readable: $asset_root" >&2
+            exit 1
+          fi
+          if [[ -n "${ZTT_CI_LOG_ROOT:-}" ]]; then
+            log_root="$ZTT_CI_LOG_ROOT"
+          else
+            log_root="$RUNNER_TEMP/open06-ztt-log-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+            echo "ZTT_CI_LOG_ROOT=$log_root" >> "$GITHUB_ENV"
+          fi
+          report_root="$log_root/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}/group-${{ matrix.group }}"
+          if ! mkdir -p "$report_root"; then
+            echo "cannot create writable open06 report directory: $report_root" >&2
+            exit 1
+          fi
+          test -d "$report_root" && test -w "$report_root"
+          write_probe="$report_root/.open06-ztt-write-test"
+          if ! (umask 077 && : > "$write_probe") || ! rm -f "$write_probe"; then
+            echo "open06 log directory is not writable: $report_root" >&2
+            exit 1
+          fi
           echo "report_root=$report_root" >> "$GITHUB_ENV"
           echo "artifact_root=$artifact_root" >> "$GITHUB_ENV"
-          mkdir -p "$report_root"
           status=0
           python3 ci-tests/run-ztt-ci.py \
-            --asset-root "$ZTT_CI_ASSET_ROOT" \
+            --asset-root "$asset_root" \
             --spike "$RUNNER_TEMP/open06-ztt-spike/install/bin/spike" \
             --output "$report_root" \
             --group-index "${{ matrix.group }}" \
