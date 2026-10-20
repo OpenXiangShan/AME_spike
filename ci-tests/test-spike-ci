@@ -1,0 +1,202 @@
+#!/bin/bash
+# CI adaptation for the AMEspike baseline, retaining the 102 Ztt regressions.
+set -Eeuo pipefail
+
+PHASE=SETUP
+STEP=initialization
+
+on_error() {
+    local status=$1
+    local line=$2
+    printf '[FAIL] %s: %s (exit=%s, line=%s)\n' \
+        "$PHASE" "$STEP" "$status" "$line" >&2
+    exit "$status"
+}
+trap 'on_error "$?" "$LINENO"' ERR
+
+fail() {
+    printf '[FAIL] %s: %s\n' "$1" "$2" >&2
+    exit 1
+}
+
+run_step() {
+    PHASE=$1
+    STEP=$2
+    shift 2
+    printf '[RUN] %s: %s\n' "$PHASE" "$STEP"
+    "$@"
+    printf '[PASS] %s: %s\n' "$PHASE" "$STEP"
+}
+
+run_expected() {
+    PHASE=TEST
+    STEP=$1
+    local expected=$2
+    shift 2
+    printf '[RUN] TEST: %s\n' "$STEP"
+    "$@" | grep "$expected"
+    printf '[PASS] TEST: %s\n' "$STEP"
+}
+
+for tool in dirname git; do
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        fail TOOL "missing required tool: $tool"
+    fi
+done
+CI="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd -P)"
+ROOT="$(git -C "$CI/.." rev-parse --show-toplevel)"
+HERE="$(pwd -P)"
+case "$HERE/" in
+    "$ROOT/"*) ;;
+    *) fail SETUP "run from a directory inside this Worktree" ;;
+esac
+INSTALL="$HERE/install"
+BUILD="$HERE/build"
+
+# These also failed before Ztt; all five passed on the newer 1c516874 port.
+# No excluded ELF is consumed by a retained test. MNRET covers all 8 modes.
+for test_name in seip-rmw wfi-as-nop mnret-double-trap \
+    test-dcsr-cause test-debug-wfi; do
+    printf '[SKIP] %s: current AMEspike baseline compatibility\n' "$test_name"
+done
+printf '[NOT RUN] Snippy: tool not provisioned\n'
+
+PHASE=TOOL
+for tool in git make gcc g++ riscv64-linux-gnu-gcc \
+    riscv64-linux-gnu-as riscv64-linux-gnu-ld dtc grep mktemp \
+    mkdir basename timeout env; do
+    STEP=$tool
+    printf '[RUN] TOOL: %s\n' "$tool"
+    if ! command -v "$tool" >/dev/null 2>&1; then
+        fail TOOL "missing required tool: $tool"
+    fi
+    printf '[PASS] TOOL: %s\n' "$tool"
+done
+STEP="host CPU count"
+if command -v nproc >/dev/null 2>&1; then
+    NPROCS="$(nproc)"
+elif command -v sysctl >/dev/null 2>&1; then
+    NPROCS="$(sysctl -n hw.ncpu)"
+else
+    fail TOOL "neither nproc nor sysctl is available"
+fi
+
+PHASE=BUILD
+STEP="Spike build prerequisites"
+for artifact in "$INSTALL/bin/spike" "$INSTALL/lib/libriscv.so" \
+    "$BUILD/spike/install-hdrs-list.h"; do
+    if [[ ! -f "$artifact" ]]; then
+        fail BUILD "missing $artifact; run ci-tests/build-spike here first"
+    fi
+done
+if [[ ! -x "$INSTALL/bin/spike" ]]; then
+    fail BUILD "installed spike is not executable"
+fi
+run_step BUILD "spike -h" "$INSTALL/bin/spike" -h
+
+# Fresh per-run directories avoid deleting or reusing another run's outputs.
+PHASE=SETUP
+STEP="create regression work directory"
+RUN="$(mktemp -d "$HERE/run-ci.XXXXXX")"
+printf '[RUN] SETUP: artifacts in %s\n' "$RUN"
+run_step SETUP "create pk and DTB directories" mkdir "$RUN/pk" "$RUN/dtb"
+cd "$RUN/pk"
+
+# Preserve the official pk build; classify download separately from compilation.
+run_step NETWORK "download riscv-pk" timeout 300 \
+    git clone https://github.com/riscv-software-src/riscv-pk.git
+run_step BUILD "configure pk" riscv-pk/configure \
+    --host=riscv64-linux-gnu --prefix="$INSTALL"
+run_step BUILD "compile pk" make -j"$NPROCS"
+run_step BUILD "install pk" make install
+PK="$RUN/pk/pk"
+
+cd "$RUN"
+run_step BUILD "hello ELF" riscv64-linux-gnu-gcc \
+    -static -O2 -o hello "$CI/hello.c"
+run_step BUILD "dummy-slliuw ELF" riscv64-linux-gnu-gcc \
+    -static -O2 -o dummy-slliuw "$CI/dummy-slliuw.c"
+run_step BUILD "customcsr ELF" riscv64-linux-gnu-gcc \
+    -static -O2 -o customcsr "$CI/customcsr.c"
+run_step BUILD "atomics ELF" riscv64-linux-gnu-gcc \
+    -static -O2 -o atomics "$CI/atomics.c"
+run_step BUILD "vector-sum ELF" riscv64-linux-gnu-gcc \
+    -static -O2 -march=rv64gcv -o vector-sum "$CI/vector-sum.c"
+# seip-rmw and wfi-as-nop guest builds are intentionally omitted.
+
+# Preserve the two assembly regressions already run by the 102 test-spike.
+run_step BUILD "Ztt GEMM ELF" riscv64-linux-gnu-gcc \
+    -march=rv64imac_zicsr -mabi=lp64 -nostdlib -nostartfiles -static \
+    -Wl,-T,"$CI/ztt-gemm/ztt-gemm.ld" -Wl,-e,_start -Wl,--build-id=none \
+    -o "$RUN/ztt-gemm.elf" "$CI/ztt-gemm/ztt-gemm.S"
+run_step BUILD "Ztt v0.6 smoke ELF" riscv64-linux-gnu-gcc \
+    -march=rv64imac_zicsr -mabi=lp64 -nostdlib -nostartfiles -static \
+    -Wl,-T,"$CI/ztt-v06-smoke/ztt-v06-smoke.ld" -Wl,-e,_start \
+    -Wl,--build-id=none -o "$RUN/ztt-v06-smoke.elf" \
+    "$CI/ztt-v06-smoke/ztt-v06-smoke.S"
+
+run_step BUILD "external libriscv interface" g++ -std=c++2a \
+    -I"$INSTALL/include" -L"$INSTALL/lib" "$CI/testlib.cc" \
+    -lriscv -o test-libriscv
+run_step BUILD "custom extension interface" g++ -std=c++2a \
+    -I"$INSTALL/include" -L"$INSTALL/lib" "$CI/test-customext.cc" \
+    -lriscv -o test-customext
+run_step BUILD "custom CSR interface" g++ -std=c++2a \
+    -I"$INSTALL/include" -L"$INSTALL/lib" "$CI/custom-csr.cc" \
+    -lriscv -o test-custom-csr
+# test-dcsr-cause and test-debug-wfi host builds are intentionally omitted.
+
+run_step BUILD "installed headers" g++ -std=c++2a \
+    -I"$INSTALL/include" -L"$INSTALL/lib" "$CI/testlib.cc" \
+    -lriscv -o /dev/null -include "$BUILD/spike/install-hdrs-list.h"
+
+run_expected Hello "Hello, world!  Pi is approximately 3.141588." \
+    timeout 180 "$INSTALL/bin/spike" --isa=rv64gc "$PK" hello
+run_expected "Vector Sum (RVV)" \
+    "The sum of the first 1000 positive integers is 500500." \
+    timeout 180 "$INSTALL/bin/spike" --isa=rv64gcv "$PK" vector-sum
+
+# The official atomics command discards commit-log stderr, not its exit status.
+run_atomics() {
+    timeout 180 "$INSTALL/bin/spike" --log-commits --isa=rv64gc \
+        "$PK" atomics 2>/dev/null
+}
+run_expected Atomics "First atomic counter is 1000, second is 100" run_atomics
+# MNRET (RV32/RV64 x S/U/VS/VU) and the four other excluded runs are omitted.
+
+run_step TEST "Ztt GEMM" timeout 180 "$INSTALL/bin/spike" \
+    --isa=rv64imac_ztt "$RUN/ztt-gemm.elf"
+run_step TEST "Ztt v0.6 smoke" timeout 180 "$INSTALL/bin/spike" \
+    --isa=rv64imac_ztt "$RUN/ztt-v06-smoke.elf"
+
+run_expected "external libriscv interface" \
+    "Hello, world!  Pi is approximately 3.141588." \
+    env LD_LIBRARY_PATH="$INSTALL/lib" \
+    timeout 180 ./test-libriscv "$PK" hello
+run_expected "Custom Extension" "Executed successfully" \
+    env LD_LIBRARY_PATH="$INSTALL/lib" \
+    timeout 180 ./test-customext "$PK" dummy-slliuw
+run_expected "Custom CSR" "Executed successfully" \
+    env LD_LIBRARY_PATH="$INSTALL/lib" \
+    timeout 180 ./test-custom-csr "$PK" customcsr
+
+run_step BUILD "DTB Discovery interface" g++ -std=c++2a \
+    -I"$INSTALL/include" -I"$CI/dtb-discovery/devices-sample" \
+    -L"$INSTALL/lib" "$CI/dtb-discovery/test-dtb-discovery.cc" \
+    "$CI/dtb-discovery/devices-sample/led-device.cc" \
+    -lriscv -o test-dtb-discovery
+shopt -s nullglob
+dts_files=("$CI/dtb-discovery/dts-samples/"*.dts)
+if (( ${#dts_files[@]} == 0 )); then
+    fail TEST "no DTB Discovery samples found"
+fi
+for dts in "${dts_files[@]}"; do
+    name="$(basename "$dts" .dts)"
+    dtb="$RUN/dtb/$name.dtb"
+    run_step BUILD "DTB $name" dtc -I dts -O dtb "$dts" -o "$dtb"
+    # The official C++ test checks discovery both disabled and enabled.
+    run_step TEST "DTB Discovery $name" env LD_LIBRARY_PATH="$INSTALL/lib" \
+        timeout 180 ./test-dtb-discovery --dtb="$dtb" "$PK" hello
+done
+
+printf '[PASS] regression: all executed checks succeeded (SKIP/NOT RUN excluded)\n'
