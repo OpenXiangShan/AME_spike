@@ -53,11 +53,31 @@ if [[ -n "${ZTT_CI_CORE_MATH_MIRROR:-}" ]]; then
     exit 2
   fi
 
-  if [[ -e "$ROOT/core-math" ]] &&
-    [[ ! -d "$ROOT/core-math" ||
-      -n "$(find "$ROOT/core-math" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
-    echo "refusing to replace a non-empty core-math path: $ROOT/core-math" >&2
-    exit 2
+  if [[ -e "$ROOT/core-math" ]]; then
+    if [[ ! -d "$ROOT/core-math" ]]; then
+      echo "refusing to replace non-directory core-math path: $ROOT/core-math" >&2
+      exit 2
+    fi
+    if [[ -n "$(find "$ROOT/core-math" -mindepth 1 -maxdepth 1 -print -quit)" ]]; then
+      core_math_toplevel="$(git -C "$ROOT/core-math" rev-parse --show-toplevel 2>/dev/null || true)"
+      core_math_path="$(cd "$ROOT/core-math" && pwd -P)"
+      core_math_git_dir_raw="$(
+        git -C "$ROOT/core-math" rev-parse --absolute-git-dir 2>/dev/null || true
+      )"
+      core_math_git_dir=""
+      if [[ -n "$core_math_git_dir_raw" ]]; then
+        core_math_git_dir="$(cd "$core_math_git_dir_raw" && pwd -P)"
+      fi
+      superproject_git_dir="$(
+        cd "$(git -C "$ROOT" rev-parse --absolute-git-dir)" && pwd -P
+      )"
+      if [[ "$core_math_toplevel" != "$core_math_path" ||
+        ! -f "$ROOT/core-math/.git" ||
+        "$core_math_git_dir" != "$superproject_git_dir/modules/core-math" ]]; then
+        echo "refusing to replace a non-empty path that is not an initialized core-math submodule: $ROOT/core-math" >&2
+        exit 2
+      fi
+    fi
   fi
   temp_git_config="$(mktemp)"
   chmod 600 "$temp_git_config"
