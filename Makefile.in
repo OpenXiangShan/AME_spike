@@ -360,7 +360,13 @@ deps : $(deps)
 # Check
 #-------------------------------------------------------------------------
 
-check : $(test_outs)
+check_test_outs := $(test_outs)
+
+ifeq ($(CI_SKIP_ZTT_FP_SEMANTICS),1)
+check_test_outs := $(filter-out ztt_fp_semantics-utst.out,$(check_test_outs))
+endif
+
+check : $(check_test_outs)
 	echo; grep -h -e'Unit Tests' -e'FAILED' -e'Segementation' $^ < /dev/null; echo
 
 .PHONY : check

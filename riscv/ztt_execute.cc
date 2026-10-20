@@ -1700,6 +1700,7 @@ void execute_conversion(processor_t& proc, ztt_opcode_t opcode, insn_t insn,
 void check_memory_alignment(processor_t& proc, insn_t insn, reg_t address,
                             std::size_t element_bytes, bool store)
 {
+  (void)insn;
   if (element_bytes != 0 && address % element_bytes != 0) {
     if (store)
       throw trap_store_address_misaligned(proc.get_state()->v, address, 0, 0);
