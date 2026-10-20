@@ -1,0 +1,375 @@
+name: open06 Ztt regression
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches: [ztt-v0.6-dev]
+    types: [opened, synchronize, ready_for_review]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open06-ztt-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    name: Build Spike on open06
+    # A self-hosted open06 runner executes the checked-out PR code.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      github.event.pull_request.draft == false
+    runs-on: [self-hosted, linux, x64, bosc, open]
+    timeout-minutes: 120
+    env:
+      ZTT_CI_BUILD_JOBS: "2"
+      # Maintainer-owned read-only mirror; the CI job only clones from it.
+      ZTT_CI_CORE_MATH_MIRROR: /nfs/share/ci-runner-RAISA/spike_run_files/ci-deps/core-math.git
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+
+      - name: Allocate isolated build directory
+        id: meta
+        run: |
+          set -euo pipefail
+          build_root="$RUNNER_TEMP/open06-ztt-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          build_log="$RUNNER_TEMP/open06-ztt-build-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}.log"
+          if [[ -n "${ZTT_CI_LOG_ROOT:-}" ]]; then
+            log_root="$ZTT_CI_LOG_ROOT"
+          else
+            log_root="/nfs/share/ci-runner-RAISA/spike_run_files/ci-results"
+            echo "ZTT_CI_LOG_ROOT=$log_root" >> "$GITHUB_ENV"
+          fi
+          durable_root="$log_root/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          test -d "$RUNNER_TEMP" && test -w "$RUNNER_TEMP"
+          if ! mkdir -p "$durable_root"; then
+            echo "cannot create writable open06 log directory: $durable_root" >&2
+            exit 1
+          fi
+          test -d "$durable_root" && test -w "$durable_root"
+          write_probe="$durable_root/.open06-ztt-write-test"
+          if ! (umask 077 && : > "$write_probe") || ! rm -f "$write_probe"; then
+            echo "open06 log directory is not writable: $durable_root" >&2
+            exit 1
+          fi
+          echo "build_root=$build_root" >> "$GITHUB_ENV"
+          echo "build_log=$build_log" >> "$GITHUB_ENV"
+          echo "durable_root=$durable_root" >> "$GITHUB_ENV"
+          echo "build_root=$build_root" >> "$GITHUB_OUTPUT"
+          echo "build_log=$build_log" >> "$GITHUB_OUTPUT"
+          echo "durable_root=$durable_root" >> "$GITHUB_OUTPUT"
+
+      - name: Build current commit
+        run: |
+          set -Eeuo pipefail
+          ci-tests/build-ztt-ci.sh "$build_root" 2>&1 |
+            tee "$build_log" "$durable_root/build.log"
+
+      - name: Publish Spike to shared run directory
+        run: |
+          set -Eeuo pipefail
+          shared_spike_root="$durable_root/spike"
+          staging_root="$durable_root/.spike-staging"
+          if [[ -e "$shared_spike_root" || -L "$shared_spike_root" ||
+            -e "$staging_root" || -L "$staging_root" ]]; then
+            echo "shared Spike output already exists for this run: $durable_root" >&2
+            exit 1
+          fi
+          mkdir "$staging_root"
+          cp -a "$build_root/install" "$staging_root/install"
+          cp "$build_root/build-metadata.env" "$staging_root/build-metadata.env"
+          cp "$build_root/spike.sha256" "$staging_root/spike.sha256"
+
+          source_commit="$(git rev-parse HEAD)"
+          expected_core_math="$(
+            git ls-tree HEAD core-math | awk '$2 == "commit" { print $3 }'
+          )"
+          actual_core_math="$(git -C core-math rev-parse HEAD)"
+          spike="$staging_root/install/bin/spike"
+          test "$source_commit" = "$GITHUB_SHA"
+          test "$actual_core_math" = "$expected_core_math"
+          test -x "$spike"
+          spike_sha256="$(sha256sum "$spike" | awk '{print $1}')"
+          recorded_sha256="$(awk 'NF { print $1; exit }' "$staging_root/spike.sha256")"
+          test "$spike_sha256" = "$recorded_sha256"
+          {
+            echo "run_id=$GITHUB_RUN_ID"
+            echo "run_attempt=$GITHUB_RUN_ATTEMPT"
+            echo "source_commit=$source_commit"
+            echo "core_math_expected=$expected_core_math"
+            echo "core_math_actual=$actual_core_math"
+            echo "spike_sha256=$spike_sha256"
+          } > "$staging_root/build-manifest.env"
+
+          mv "$staging_root" "$shared_spike_root"
+          printf 'ready\n' > "$durable_root/spike.ready"
+
+      - name: Record source and Spike identity
+        if: always()
+        run: |
+          set -euo pipefail
+          mkdir -p "$build_root/logs" "$durable_root"
+          {
+            echo "commit=$GITHUB_SHA"
+            if test -x "$build_root/install/bin/spike"; then
+              sha256sum "$build_root/install/bin/spike"
+            fi
+            git submodule status || true
+          } | tee "$build_root/logs/identity.log" "$durable_root/identity.log"
+
+  regression:
+    name: open06 group ${{ matrix.group }}
+    needs: build
+    if: needs.build.result == 'success'
+    runs-on: [self-hosted, linux, x64, bosc, open]
+    timeout-minutes: 360
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        group: [0, 1, 2, 3, 4, 5]
+    env:
+      # These roots are supplied by the open06 runner/service environment.
+      # ZTT_CI_ASSET_ROOT is optional and falls back to the shared
+      # verify-all-fixed directory when it is not supplied. ZTT_CI_LOG_ROOT
+      # falls back to the shared ci-results directory.
+      ZTT_CI_TIMEOUT_SECONDS: "30"
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: false
+          persist-credentials: false
+
+      - name: Run manifest-selected group
+        run: |
+          set -euo pipefail
+          asset_root="${ZTT_CI_ASSET_ROOT:-/nfs/share/ci-runner-RAISA/spike_run_files/verify-all-fixed}"
+          if [[ ! -d "$asset_root" || ! -r "$asset_root" || ! -x "$asset_root" ]]; then
+            echo "open06 asset directory is not readable: $asset_root" >&2
+            exit 1
+          fi
+          if [[ -n "${ZTT_CI_LOG_ROOT:-}" ]]; then
+            log_root="$ZTT_CI_LOG_ROOT"
+          else
+            log_root="/nfs/share/ci-runner-RAISA/spike_run_files/ci-results"
+            echo "ZTT_CI_LOG_ROOT=$log_root" >> "$GITHUB_ENV"
+          fi
+          run_root="$log_root/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          report_root="$run_root/group-${{ matrix.group }}"
+          shared_spike_root="$run_root/spike"
+          test -f "$run_root/spike.ready"
+          test -f "$shared_spike_root/build-manifest.env"
+          test -x "$shared_spike_root/install/bin/spike"
+          source_commit="$(git rev-parse HEAD)"
+          expected_core_math="$(
+            git ls-tree HEAD core-math | awk '$2 == "commit" { print $3 }'
+          )"
+          actual_core_math="$(awk -F= '$1 == "core_math_actual" { print $2 }' "$shared_spike_root/build-manifest.env")"
+          built_commit="$(awk -F= '$1 == "source_commit" { print $2 }' "$shared_spike_root/build-manifest.env")"
+          built_sha256="$(awk -F= '$1 == "spike_sha256" { print $2 }' "$shared_spike_root/build-manifest.env")"
+          built_run_id="$(awk -F= '$1 == "run_id" { print $2 }' "$shared_spike_root/build-manifest.env")"
+          built_run_attempt="$(awk -F= '$1 == "run_attempt" { print $2 }' "$shared_spike_root/build-manifest.env")"
+          actual_sha256="$(sha256sum "$shared_spike_root/install/bin/spike" | awk '{print $1}')"
+          test "$source_commit" = "$GITHUB_SHA"
+          test "$built_commit" = "$GITHUB_SHA"
+          test "$built_run_id" = "$GITHUB_RUN_ID"
+          test "$built_run_attempt" = "$GITHUB_RUN_ATTEMPT"
+          test "$actual_core_math" = "$expected_core_math"
+          test "$actual_sha256" = "$built_sha256"
+          if command -v ldd >/dev/null 2>&1; then
+            ldd "$shared_spike_root/install/bin/spike" > "$run_root/spike-ldd-${{ matrix.group }}.log" 2>&1 || true
+            if grep -q 'not found' "$run_root/spike-ldd-${{ matrix.group }}.log"; then
+              echo "shared Spike has unresolved runtime dependencies" >&2
+              cat "$run_root/spike-ldd-${{ matrix.group }}.log" >&2
+              exit 1
+            fi
+          fi
+          if ! mkdir -p "$report_root"; then
+            echo "cannot create writable open06 report directory: $report_root" >&2
+            exit 1
+          fi
+          test -d "$report_root" && test -w "$report_root"
+          write_probe="$report_root/.open06-ztt-write-test"
+          if ! (umask 077 && : > "$write_probe") || ! rm -f "$write_probe"; then
+            echo "open06 log directory is not writable: $report_root" >&2
+            exit 1
+          fi
+          echo "report_root=$report_root" >> "$GITHUB_ENV"
+          status=0
+          python3 ci-tests/run-ztt-ci.py \
+            --asset-root "$asset_root" \
+            --spike "$shared_spike_root/install/bin/spike" \
+            --output "$report_root" \
+            --group-index "${{ matrix.group }}" \
+            --group-count 6 \
+            --timeout-seconds "$ZTT_CI_TIMEOUT_SECONDS" || status=$?
+          exit "$status"
+
+  aggregate:
+    name: Aggregate open06 regression
+    needs: [build, regression]
+    if: always() && needs.build.result == 'success'
+    runs-on: [self-hosted, linux, x64, bosc, open]
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          submodules: false
+          persist-credentials: false
+
+      - name: Enforce selected regression and full-scope completion
+        run: |
+          set -euo pipefail
+          if [[ -n "${ZTT_CI_LOG_ROOT:-}" ]]; then
+            log_root="$ZTT_CI_LOG_ROOT"
+          else
+            log_root="/nfs/share/ci-runner-RAISA/spike_run_files/ci-results"
+          fi
+          run_root="$log_root/open06-ztt/${GITHUB_RUN_ID}/${GITHUB_RUN_ATTEMPT}"
+          if [[ ! -d "$run_root" || ! -r "$run_root" || ! -x "$run_root" ]]; then
+            echo "open06 shared run directory is not readable: $run_root" >&2
+            exit 1
+          fi
+          mkdir -p "$run_root/aggregate"
+          test -d "$run_root/aggregate" && test -w "$run_root/aggregate"
+          write_probe="$run_root/aggregate/.open06-ztt-write-test"
+          if ! (umask 077 && : > "$write_probe") || ! rm -f "$write_probe"; then
+            echo "open06 aggregate directory is not writable: $run_root/aggregate" >&2
+            exit 1
+          fi
+          expected_core_math="$(
+            git ls-tree HEAD core-math | awk '$2 == "commit" { print $3 }'
+          )"
+          echo "ZTT_CI_OPEN06_RUN_ROOT=$run_root" >> "$GITHUB_ENV"
+          export ZTT_CI_OPEN06_RUN_ROOT="$run_root"
+          export ZTT_CI_OPEN06_EXPECTED_CORE_MATH="$expected_core_math"
+          python3 - <<'PY'
+          import json
+          import hashlib
+          import os
+          from pathlib import Path
+
+          run_root = Path(os.environ["ZTT_CI_OPEN06_RUN_ROOT"])
+          expected_commit = os.environ.get("GITHUB_SHA", "")
+          expected_core_math = os.environ.get("ZTT_CI_OPEN06_EXPECTED_CORE_MATH", "")
+          summaries = sorted(run_root.glob("group-*/summary.json"))
+          errors = []
+          if len(summaries) != 6:
+              errors.append(f"expected 6 group summaries, found {len(summaries)}")
+          expected_groups = {f"group-{index}" for index in range(6)}
+          actual_groups = {path.parent.name for path in summaries}
+          if actual_groups != expected_groups:
+              errors.append(
+                  f"expected group directories {sorted(expected_groups)}, "
+                  f"found {sorted(actual_groups)}"
+              )
+          data = []
+          for path in summaries:
+              try:
+                  value = json.loads(path.read_text())
+                  if not isinstance(value, dict):
+                      errors.append(f"summary is not an object: {path}")
+                      continue
+                  data.append(value)
+              except (OSError, json.JSONDecodeError) as exc:
+                  errors.append(f"cannot read {path}: {exc}")
+          if expected_commit and any(
+              item.get("commit") != expected_commit for item in data
+          ):
+              errors.append("one or more group summaries used a different checkout commit")
+          if any(
+              item.get("group_count") != 6
+              or item.get("group_index") not in range(6)
+              for item in data
+          ):
+              errors.append("one or more group summaries has an invalid matrix group")
+          build_manifest_path = run_root / "spike" / "build-manifest.env"
+          build_manifest = {}
+          try:
+              for line in build_manifest_path.read_text().splitlines():
+                  key, value = line.split("=", 1)
+                  build_manifest[key] = value
+          except (OSError, ValueError) as exc:
+              errors.append(f"cannot read build manifest {build_manifest_path}: {exc}")
+          if build_manifest.get("source_commit") != expected_commit:
+              errors.append("shared Spike was not built from the current checkout commit")
+          if build_manifest.get("run_id") != os.environ.get("GITHUB_RUN_ID"):
+              errors.append("shared Spike belongs to a different GitHub run")
+          if build_manifest.get("run_attempt") != os.environ.get("GITHUB_RUN_ATTEMPT"):
+              errors.append("shared Spike belongs to a different GitHub run attempt")
+          if (
+              not expected_core_math
+              or build_manifest.get("core_math_expected") != expected_core_math
+              or build_manifest.get("core_math_actual") != expected_core_math
+          ):
+              errors.append("shared Spike core-math does not match the current gitlink")
+          spike_path = run_root / "spike" / "install" / "bin" / "spike"
+          if not spike_path.is_file() or not os.access(spike_path, os.X_OK):
+              errors.append(f"shared Spike is missing or not executable: {spike_path}")
+          else:
+              digest = hashlib.sha256(spike_path.read_bytes()).hexdigest()
+              if build_manifest.get("spike_sha256") != digest:
+                  errors.append("shared Spike SHA256 does not match its build manifest")
+          if any(item.get("status") != "PASS" for item in data):
+              errors.append("one or more selected open06 groups failed")
+          selected_programs = sum(item.get("selected_programs", 0) for item in data)
+          selected_cases = sum(item.get("selected_cases", 0) for item in data)
+          if selected_programs != 1049:
+              errors.append(
+                  "selected regression did not cover all 1,049 manifest ELF files"
+              )
+          if selected_cases <= 0:
+              errors.append("no cases were executed")
+          if any(item.get("manifest_programs") != 1049 for item in data):
+              errors.append("a group did not validate the complete manifest set")
+          if any(item.get("errors") for item in data):
+              errors.append("a group reported validation errors")
+          status = "PASS" if not errors else "FAIL"
+          summary = {
+              "status": status,
+              "selected_regression": status,
+              "selected_programs": selected_programs,
+              "selected_cases": selected_cases,
+              "all_asset_scope_complete": not errors and selected_programs == 1049,
+              "errors": errors,
+              "groups": data,
+              "note": (
+                  "All 67 manifests and 1,049 ELF files were selected and passed."
+                  if not errors
+                  else "The selected regression or its coverage obligation failed."
+              ),
+          }
+          aggregate_path = run_root / "aggregate" / "summary.json"
+          aggregate_path.write_text(
+              json.dumps(summary, indent=2, sort_keys=True) + "\n"
+          )
+          print(json.dumps(summary, indent=2, sort_keys=True))
+          if errors:
+              raise SystemExit(1)
+          PY
+
+      - name: Publish aggregate summary
+        if: always()
+        run: |
+          {
+            echo "## open06 Ztt regression"
+            echo
+            echo "The matrix covers the selected 67-manifest scope: base_000 plus partition_0000..partition_0065."
+            echo "Per-ELF logs, traces, signatures, and failure evidence are stored on the shared open06 run directory."
+            if test -f "$ZTT_CI_OPEN06_RUN_ROOT/aggregate/summary.json"; then
+              echo
+              echo '```json'
+              cat "$ZTT_CI_OPEN06_RUN_ROOT/aggregate/summary.json"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
