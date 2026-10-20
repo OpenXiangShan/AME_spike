@@ -32,7 +32,8 @@ SHELL := /bin/bash
 CASES := \
 	gemm_fp32 \
 	gemm_int8 \
-	gemm_mixed
+	gemm_mixed \
+	gelu
 
 BUILD_DIR := $(CURDIR)/build
 SUITE_REPORT := $(BUILD_DIR)/reports/EXAMPLE_REPORT.md
@@ -48,6 +49,7 @@ help:
 	@echo "  make gemm_fp32   Build and test one case on Host and Spike"
 	@echo "  make gemm_int8   Test INT8 GEMM with INT32/INT64 conversion"
 	@echo "  make gemm_mixed  Test INT8 x INT8 to INT32 widening GEMM"
+	@echo "  make gelu        Test base-2 sigmoid GELU approximation"
 	@echo "  make -C gemm_fp32 test-host-golden  Use configured matrices + Host C golden"
 	@echo "  make -C gemm_fp32 test-reference    Use configured matrices + reference"
 	@echo "  make test        Build and test all cases"
