@@ -36,6 +36,7 @@ CASES := \
 	gelu \
 	rmsnorm \
 	mha \
+	ffn \
 	rope
 
 BUILD_DIR := $(CURDIR)/build
