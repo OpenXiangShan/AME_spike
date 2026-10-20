@@ -35,6 +35,7 @@ CASES := \
 	gemm_mixed \
 	gelu \
 	rmsnorm \
+	ffn \
 	mha
 
 BUILD_DIR := $(CURDIR)/build
