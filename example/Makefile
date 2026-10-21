@@ -35,8 +35,9 @@ CASES := \
 	gemm_mixed \
 	gelu \
 	rmsnorm \
+	mha \
 	ffn \
-	mha
+	rope
 
 BUILD_DIR := $(CURDIR)/build
 SUITE_REPORT := $(BUILD_DIR)/reports/EXAMPLE_REPORT.md
