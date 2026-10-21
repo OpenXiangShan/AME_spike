@@ -34,6 +34,7 @@ CASES := \
 	gemm_int8 \
 	gemm_mixed \
 	gelu \
+	softmax \
 	rmsnorm \
 	mha \
 	ffn \
